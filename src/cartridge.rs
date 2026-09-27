@@ -59,6 +59,7 @@ pub enum CartridgeWarning {
     InvalidNintendoHeader,
     InvalidLicencing(u8),
     InvalidDestination(u8),
+    BadGlobalChecksum { expected: u16, computed: u16 },
 }
 
 #[derive(Debug)]
@@ -99,9 +100,16 @@ impl<'rom> Cartridge<'rom> {
         let cartrige_title_header = &rom[0x0134..0x0143];
         let title =
             str::from_utf8(cartrige_title_header).expect("rom should expect a valid utf8 title");
-        let destination: Destination = rom[0x014A].into();
-        let cartridge_type: Result<CartridgeType, u8> = rom[0x147].try_into();
 
+        let destination: Destination = rom[0x014A].into();
+
+        let cartridge_type: Result<CartridgeType, u8> = rom[0x147].try_into();
+        if let Err(invalid_type) = cartridge_type {
+            errors.push(CartridgeError::InvalidCartridgeType(invalid_type));
+        }
+
+        //Verify that the nintendo logo is present in the cartridge header
+        //this is not stricly required to have a valid rom but a conformant cartridge should have this valid header
         let nintendo_header: &[u8] = &[
             0xCE, 0xED, 0x66, 0x66, 0xCC, 0x0D, 0x00, 0x0B, 0x03, 0x73, 0x00, 0x83, 0x00, 0x0C,
             0x00, 0x0D, 0x00, 0x08, 0x11, 0x1F, 0x88, 0x89, 0x00, 0x0E, 0xDC, 0xCC, 0x6E, 0xE6,
@@ -115,19 +123,49 @@ impl<'rom> Cartridge<'rom> {
             warnings.push(CartridgeWarning::InvalidNintendoHeader);
         }
 
-        if let Err(invalid_type) = cartridge_type {
-            errors.push(CartridgeError::InvalidCartridgeType(invalid_type));
+        //Verify header checksum and global checksum
+        //invalid header checksum is treated as an error
+        //invalid global checksum is treated as warning (the console didn't check it)
+        let cartridge_header_checksum = rom[0x014D];
+        let mut compute_header_checksum: u8 = 0;
+        //verify checksum
+        for b in &rom[0x0134..=0x014C] {
+            compute_header_checksum = compute_header_checksum.wrapping_sub(*b);
+            compute_header_checksum = compute_header_checksum.wrapping_sub(1);
+        }
+
+        if cartridge_header_checksum != compute_header_checksum {
+            errors.push(CartridgeError::BadHeaderChecksum {
+                expected: cartridge_header_checksum,
+                computed: compute_header_checksum,
+            });
+        }
+
+        let cartridge_global_checksum = u16::from_be_bytes([rom[0x014E], rom[0x014F]]);
+        let mut compute_global_checksum: u16 = 0;
+        for b in rom {
+            compute_global_checksum = compute_global_checksum.wrapping_add((*b) as u16);
+        }
+        compute_global_checksum = compute_global_checksum.wrapping_sub(rom[0x014E] as u16);
+        compute_global_checksum = compute_global_checksum.wrapping_sub(rom[0x014F] as u16);
+
+        if cartridge_global_checksum != compute_global_checksum {
+            warnings.push(CartridgeWarning::BadGlobalChecksum {
+                expected: cartridge_global_checksum,
+                computed: compute_global_checksum,
+            });
         }
 
         if !errors.is_empty() {
-            return Err(CartridgeErrors { errors: errors });
+            Err(CartridgeErrors { errors: errors })
+        } else {
+            Ok(Cartridge {
+                data: rom,
+                title: title,
+                licencee_code: 0,
+                destination_code: destination,
+                warnings: warnings,
+            })
         }
-        Ok(Cartridge {
-            data: rom,
-            title: title,
-            licencee_code: 0,
-            destination_code: destination,
-            warnings: warnings,
-        })
     }
 }
