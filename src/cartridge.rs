@@ -68,6 +68,8 @@ pub struct Cartridge<'rom> {
     title: &'rom str,
     licencee_code: u8,
     destination_code: Destination,
+    rom_bank_count: usize,
+    rom_size: usize,
     pub warnings: Vec<CartridgeWarning>,
 }
 
@@ -75,8 +77,11 @@ impl Display for Cartridge<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Game: {}\nDestination: {:?}",
-            self.title, self.destination_code
+            "Game: {}\nDestination: {:?}, Rom Size: {}Kib, Bank Count: {}",
+            self.title,
+            self.destination_code,
+            (self.rom_size / 1024),
+            self.rom_bank_count
         )
     }
 }
@@ -93,6 +98,8 @@ pub struct CartridgeErrors {
 }
 
 impl<'rom> Cartridge<'rom> {
+    const ROM_BANK_SIZE: usize = 0x4000;
+
     pub fn load(rom: &'rom [u8]) -> Result<Self, CartridgeErrors> {
         let mut errors: Vec<CartridgeError> = Vec::new();
         let mut warnings: Vec<CartridgeWarning> = Vec::new();
@@ -156,6 +163,11 @@ impl<'rom> Cartridge<'rom> {
             });
         }
 
+        let header_rom_size_value = rom[0x0148] as usize;
+        // let header_rom_size_value = 0;
+        let rom_size = (Self::ROM_BANK_SIZE * 2) * (1 << header_rom_size_value);
+        let rom_bank_count = rom_size / Self::ROM_BANK_SIZE;
+
         if !errors.is_empty() {
             Err(CartridgeErrors { errors: errors })
         } else {
@@ -165,6 +177,8 @@ impl<'rom> Cartridge<'rom> {
                 licencee_code: 0,
                 destination_code: destination,
                 warnings: warnings,
+                rom_size,
+                rom_bank_count,
             })
         }
     }
