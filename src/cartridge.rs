@@ -59,6 +59,7 @@ pub enum CartridgeWarning {
     InvalidNintendoHeader,
     InvalidLicencing(u8),
     InvalidDestination(u8),
+    InvalidRamSize(u8),
     BadGlobalChecksum { expected: u16, computed: u16 },
 }
 
@@ -66,10 +67,13 @@ pub enum CartridgeWarning {
 pub struct Cartridge<'rom> {
     data: &'rom [u8],
     title: &'rom str,
+    cartridge_type: CartridgeType,
     licencee_code: u8,
     destination_code: Destination,
     rom_bank_count: usize,
     rom_size: usize,
+    ram_bank_count: usize,
+    ram_size: usize,
     pub warnings: Vec<CartridgeWarning>,
 }
 
@@ -77,11 +81,14 @@ impl Display for Cartridge<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Game: {}\nDestination: {:?}, Rom Size: {}Kib, Bank Count: {}",
+            "Game: {}\nCartridge Type: {:?}\nDestination: {:?}\nRom Size: {}Kib, Rom bank count: {}\nRam Size: {}Kib, Ram bank count: {}",
             self.title,
+            self.cartridge_type,
             self.destination_code,
             (self.rom_size / 1024),
-            self.rom_bank_count
+            self.rom_bank_count,
+            (self.ram_size / 1024),
+            self.ram_bank_count,
         )
     }
 }
@@ -99,6 +106,7 @@ pub struct CartridgeErrors {
 
 impl<'rom> Cartridge<'rom> {
     const ROM_BANK_SIZE: usize = 0x4000;
+    const RAM_BANK_SIZE: usize = 0x2000;
 
     pub fn load(rom: &'rom [u8]) -> Result<Self, CartridgeErrors> {
         let mut errors: Vec<CartridgeError> = Vec::new();
@@ -164,9 +172,21 @@ impl<'rom> Cartridge<'rom> {
         }
 
         let header_rom_size_value = rom[0x0148] as usize;
-        // let header_rom_size_value = 0;
-        let rom_size = (Self::ROM_BANK_SIZE * 2) * (1 << header_rom_size_value);
-        let rom_bank_count = rom_size / Self::ROM_BANK_SIZE;
+        let rom_bank_count = 2 << header_rom_size_value;
+
+        //doc: https://gbdev.io/pandocs/The_Cartridge_Header.html#0149--ram-size
+        let header_ram_size_value = rom[0x0149];
+        let ram_bank_count = match header_ram_size_value {
+            0 => 0,
+            2 => 1,
+            3 => 4,
+            4 => 16,
+            5 => 8,
+            _ => {
+                warnings.push(CartridgeWarning::InvalidRamSize(header_ram_size_value));
+                0
+            }
+        };
 
         if !errors.is_empty() {
             Err(CartridgeErrors { errors: errors })
@@ -177,8 +197,11 @@ impl<'rom> Cartridge<'rom> {
                 licencee_code: 0,
                 destination_code: destination,
                 warnings: warnings,
-                rom_size,
                 rom_bank_count,
+                rom_size: rom_bank_count * Self::ROM_BANK_SIZE,
+                ram_bank_count,
+                ram_size: ram_bank_count * Self::RAM_BANK_SIZE,
+                cartridge_type: cartridge_type.unwrap(),
             })
         }
     }
