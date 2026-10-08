@@ -1,12 +1,10 @@
 use std::{env::args, fs, io::Read};
 
 use crate::cartridge::Cartridge;
-use crate::sm83::SM83;
 mod cartridge;
+mod mbc;
 mod sm83;
-
 fn main() {
-
     let rom_folder = fs::read_dir("rom")
         .expect("Missing folder rom")
         .next()
