@@ -1,3 +1,8 @@
+// documentation
+// https://gbdev.io/pandocs/CPU_Instruction_Set.html
+// https://gbdev.io/gb-opcodes/optables/
+// https://gbdev.io/gb-opcodes/optables/octal
+
 pub struct SM83 {
     pc: u16, //program counter
     sp: u16, //stack counter
@@ -26,6 +31,21 @@ enum RegisterName {
     PC,
 }
 
+impl From<RegisterR8> for RegisterName {
+    fn from(value: RegisterR8) -> Self {
+        match value {
+            RegisterR8::B => Self::B,
+            RegisterR8::C => Self::C,
+            RegisterR8::D => Self::D,
+            RegisterR8::E => Self::E,
+            RegisterR8::H => Self::H,
+            RegisterR8::L => Self::L,
+            RegisterR8::HL => Self::HL,
+            RegisterR8::A => Self::A,
+        }
+    }
+}
+
 enum RegisterR8 {
     B = 0,
     C = 1,
@@ -36,6 +56,25 @@ enum RegisterR8 {
     HL = 6,
     A = 7,
 }
+
+impl TryFrom<u8> for RegisterR8 {
+    type Error = u8;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0 => RegisterR8::B,
+            1 => RegisterR8::C,
+            2 => RegisterR8::D,
+            3 => RegisterR8::E,
+            4 => RegisterR8::H,
+            5 => RegisterR8::L,
+            6 => RegisterR8::HL,
+            7 => RegisterR8::A,
+            _ => return Err(value),
+        })
+    }
+}
+
 enum RegisterR16 {
     BC = 0,
     DE = 1,
@@ -164,12 +203,19 @@ impl SM83 {
         self.af &= !(1 << flag as u8);
     }
 
-    fn load_register_register(&mut self, r1: RegisterName, r2: RegisterName) {
-        let x = self.get_register(r1);
-        &mut self.set_register(r2, x);
-    }
+    //block 1
+    fn load_register_register(&mut self, opcode: u8) {
+        assert!(opcode >> 6 == 0b01);
+        let source: RegisterR8 = (opcode & 0b111).try_into().unwrap();
+        let dest: RegisterR8 = (opcode >> 3 & 0b111).try_into().unwrap();
 
-    fn load_register_immediate(&mut self, r1: RegisterName, value: u16) {
-        self.set_register(r1, value);
+        match (source, dest) {
+            (RegisterR8::HL, RegisterR8::HL) => {
+                todo!("implement halt instruction")
+            }
+            (src, dst) => {
+                self.set_register(dst.into(), self.get_register(src.into()));
+            }
+        }
     }
 }
