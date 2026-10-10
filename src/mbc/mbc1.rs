@@ -172,7 +172,7 @@ mod tests {
     fn mbc1_setup() -> MBC1 {
         const KB: usize = 1024;
         const MIB: usize = KB * 1024;
-        let mbc = MBC1::new(&[], 2 * MIB, 32 * KB);
+        let mbc = MBC1::new(vec![], 2 * MIB, 32 * KB);
         mbc
     }
 
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_rom_256kb_map_bank_0() {
-        let mut mbc = MBC1::new(&[], 1024 * 256, 0);
+        let mut mbc = MBC1::new(vec![], 1024 * 256, 0);
         mbc.write(0x2000, 0b10000);
         //the register check if it's value is set to 0 and return 1 if so (bank 0 shouldn't be selectable)
         //but passing the value 0b10000 disable this check since it's not 0b00000
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn test_rom_bank_selection_512kib() {
         //32 * 0x4000 == 512KiB
-        let mut mbc = MBC1::new(&[], 32 * 0x4000, 0);
+        let mut mbc = MBC1::new(vec![], 32 * 0x4000, 0);
 
         for i in 0..32 {
             mbc.write(0x2000, i);
@@ -246,7 +246,7 @@ mod tests {
         }
 
         let rom_size = rom.len();
-        let mut mbc = MBC1::new(&rom, rom_size, 0);
+        let mut mbc = MBC1::new(rom, rom_size, 0);
 
         for i in 0..128 {
             //low bit set
