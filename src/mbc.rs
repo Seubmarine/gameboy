@@ -1,3 +1,3 @@
-mod mbc1;
-mod mbc_trait;
-mod rom_only;
+pub mod mbc1;
+pub mod mbc_trait;
+pub mod rom_only;

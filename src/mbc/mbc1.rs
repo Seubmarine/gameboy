@@ -7,8 +7,8 @@ enum BankingMode {
     Advanced, //RAM Banking Mode (up to 32KByte RAM, 512KByte ROM)
 }
 
-struct MBC1<'rom> {
-    rom: &'rom [u8],
+pub struct MBC1 {
+    rom: Vec<u8>,
     _rom_ram_bank_register: u8, //5bit register
     ram_enable: bool,
     rom_size: usize,
@@ -17,10 +17,10 @@ struct MBC1<'rom> {
     banking_mode: BankingMode,
 }
 
-impl<'rom> MBC1<'rom> {
+impl MBC1 {
     const RAM_BANK_SIZE: usize = 0x2000;
     const ROM_BANK_SIZE: usize = 0x4000;
-    fn new(rom: &'rom [u8], rom_size: usize, ram_size: usize) -> Self {
+    pub fn new(rom: Vec<u8>, rom_size: usize, ram_size: usize) -> Self {
         Self {
             rom,
             _rom_ram_bank_register: 0,
@@ -82,7 +82,7 @@ impl<'rom> MBC1<'rom> {
     fn rom_bank_mask() {}
 }
 
-impl MemoryBankController for MBC1<'_> {
+impl MemoryBankController for MBC1 {
     //DOC: https://gbdev.io/pandocs/MBC1.html#memory
     fn read(&self, addr: u16) -> u8 {
         match addr {
@@ -165,12 +165,11 @@ impl MemoryBankController for MBC1<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::cartridge::CartridgeType::Mbc1;
 
     // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
 
-    fn mbc1_setup() -> MBC1<'static> {
+    fn mbc1_setup() -> MBC1 {
         const KB: usize = 1024;
         const MIB: usize = KB * 1024;
         let mbc = MBC1::new(&[], 2 * MIB, 32 * KB);

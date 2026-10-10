@@ -1,5 +1,7 @@
 use std::{convert::TryFrom, fmt::Display};
 
+use crate::mbc::{mbc_trait::MemoryBankController, mbc1::MBC1, rom_only::RomOnly};
+
 #[derive(Debug)]
 pub enum Destination {
     Japan = 0x00,
@@ -203,6 +205,28 @@ impl<'rom> Cartridge<'rom> {
                 ram_size: ram_bank_count * Self::RAM_BANK_SIZE,
                 cartridge_type: cartridge_type.unwrap(),
             })
+        }
+    }
+
+    pub fn to_mbc(&self) -> Box<dyn MemoryBankController> {
+        match self.cartridge_type {
+            CartridgeType::RomOnly => Box::new(RomOnly::new(self.data.to_vec())),
+            CartridgeType::RomRam => todo!(),
+            CartridgeType::RomRamBattery => todo!(),
+            CartridgeType::Mbc1 => {
+                Box::new(MBC1::new(self.data.to_vec(), self.rom_size, self.ram_size))
+            }
+            CartridgeType::Mbc1Ram => {
+                Box::new(MBC1::new(self.data.to_vec(), self.rom_size, self.ram_size))
+            }
+            CartridgeType::Mbc1RamBattery => {
+                Box::new(MBC1::new(self.data.to_vec(), self.rom_size, self.ram_size))
+            }
+            CartridgeType::MBC2 => todo!(),
+            CartridgeType::Mbc2Battery => todo!(),
+            CartridgeType::MBC5 => todo!(),
+            CartridgeType::Mbc5Ram => todo!(),
+            CartridgeType::Mbc5RamBattery => todo!(),
         }
     }
 }

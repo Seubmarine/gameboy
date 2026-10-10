@@ -1,16 +1,16 @@
 use crate::mbc::mbc_trait::{self, MemoryBankController};
 //DOC: https://gbdev.io/pandocs/nombc.html
-struct RomOnly<'rom> {
-    rom: &'rom [u8],
+pub struct RomOnly {
+    rom: Vec<u8>,
 }
 
-impl<'rom> RomOnly<'rom> {
-    fn new(rom: &'rom [u8]) -> Self {
+impl RomOnly {
+    pub fn new(rom: Vec<u8>) -> Self {
         Self { rom }
     }
 }
 
-impl MemoryBankController for RomOnly<'_> {
+impl MemoryBankController for RomOnly {
     fn write(&mut self, _addr: u16, _value: u8) {
         panic!("Can't use write on rom in a rom only")
     }
