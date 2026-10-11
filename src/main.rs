@@ -8,7 +8,7 @@ mod sm83;
 
 fn main() {
     let path = args()
-        .next()
+        .nth(1)
         .unwrap_or("tests/test-roms/mooneye/mbc1/rom_512kb.gb".to_string());
     let mut file = fs::File::open(path).unwrap();
 
