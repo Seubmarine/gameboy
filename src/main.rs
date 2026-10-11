@@ -1,20 +1,18 @@
 use std::{env::args, fs, io::Read};
 
-use crate::cartridge::Cartridge;
+use crate::{cartridge::Cartridge, gameboy::GameBoy};
 mod cartridge;
+mod gameboy;
 mod mbc;
 mod sm83;
+
 fn main() {
-    let rom_folder = fs::read_dir("rom")
-        .expect("Missing folder rom")
+    let path = args()
         .next()
-        .expect("Need a file in the rom folder")
-        .unwrap();
-    let mut file = fs::File::open(rom_folder.path()).unwrap();
+        .unwrap_or("tests/test-roms/mooneye/mbc1/rom_512kb.gb".to_string());
+    let mut file = fs::File::open(path).unwrap();
 
     let mut file_bytes = Vec::new();
-    // let c = Cartridge::new();
-    // println!("{c:?}");
     file.read_to_end(&mut file_bytes).unwrap();
 
     let c = Cartridge::load(&file_bytes).unwrap();
@@ -23,4 +21,7 @@ fn main() {
     }
 
     println!("{c}");
+
+    let mut gb = GameBoy::load(&c);
+    gb.run();
 }

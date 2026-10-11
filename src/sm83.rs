@@ -3,9 +3,11 @@
 // https://gbdev.io/gb-opcodes/optables/
 // https://gbdev.io/gb-opcodes/optables/octal
 
+use crate::gameboy::Bus;
+
 pub struct SM83 {
     pc: u16, //program counter
-    sp: u16, //stack counter
+    sp: u16, //stack pointer
     af: u16, //accumalator and flags
 
     bc: u16,
@@ -142,11 +144,12 @@ impl HighLow for u16 {
     }
 }
 impl SM83 {
+    //https://gbdev.io/pandocs/Power_Up_Sequence.html?highlight=boot#cpu-registers
     pub fn new() -> Self {
-        SM83 {
-            pc: 0, //program counter
-            sp: 0, //stack counter
-            af: 0, //accumalator and flags
+        let mut cpu = SM83 {
+            pc: 0x0100, //program counter
+            sp: 0xFFFE, //stack counter
+            af: 0,      //accumalator and flags
 
             bc: 0,
             de: 0,
@@ -154,7 +157,13 @@ impl SM83 {
             hl: 0, //HL Register
             ir: 0, //instruction register
             ie: 0, //interrupt enable
-        }
+        };
+        cpu.set_register(RegisterName::A, 0x11);
+        cpu.set_register(RegisterName::D, 0xFF);
+        cpu.set_register(RegisterName::H, 0x56);
+        cpu.set_register(RegisterName::L, 0x0D);
+        cpu.set_flag(RegisterFlag::Zero);
+        cpu
     }
 
     fn get_register(&self, r: RegisterName) -> u16 {
@@ -203,8 +212,57 @@ impl SM83 {
         self.af &= !(1 << flag as u8);
     }
 
+    fn dispatch_block_0(&mut self, bus: &mut Bus, opcode: u8) {
+        assert!(opcode >> 6 == 0b00);
+        if opcode == 0b00000000 {
+            return;
+        } else if opcode == 0b00010000 {
+            todo!("stop");
+        }
+        let last_4 = opcode & 0b1111;
+        match last_4 {
+            0b0001 => todo!("ld r16 imm16"),
+            0b0010 => todo!("ld [r16mem] a"),
+            0b1010 => todo!("ld a [r16mem]"),
+            0b1000 => todo!("ld [imm16] sp"),
+            0b0011 => todo!("inc r16"),
+            0b1011 => todo!("dec r16"),
+            0b1001 => todo!("add hl, r16"),
+            _ => {
+                let last_3 = opcode & 0b111;
+                match last_3 {
+                    0b100 => todo!("inc r8"),
+                    0b101 => todo!("dec r8"),
+                    0b110 => todo!("ld r8 imm8"),
+                    0b111 => {
+                        let bit_543 = opcode >> 3 & 0b111;
+                        match bit_543 {
+                            0b000 => todo!("rlca"),
+                            0b001 => todo!("rrca"),
+                            0b010 => todo!("rla"),
+                            0b011 => todo!("rra"),
+                            0b100 => todo!("daa"),
+                            0b101 => todo!("cpl"),
+                            0b110 => todo!("scf"),
+                            0b111 => todo!("ccf"),
+                            _ => unreachable!(),
+                        }
+                    }
+                    0b000 => {
+                        let bit_43 = opcode >> 2 & 0b11;
+                        match bit_43 {
+                            0b11 => todo!("jr imm8"),
+                            _ => todo!("jr cond imm8"),
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+
     //block 1
-    fn load_register_register(&mut self, opcode: u8) {
+    fn load_register_register(&mut self, bus: &mut Bus, opcode: u8) {
         assert!(opcode >> 6 == 0b01);
         let source: RegisterR8 = (opcode & 0b111).try_into().unwrap();
         let dest: RegisterR8 = (opcode >> 3 & 0b111).try_into().unwrap();
@@ -216,6 +274,61 @@ impl SM83 {
             (src, dst) => {
                 self.set_register(dst.into(), self.get_register(src.into()));
             }
+        }
+    }
+
+    fn arithmetic_8bit(&mut self, bus: &mut Bus, opcode: u8) {
+        assert!(opcode >> 6 == 0b10);
+        let operation_type = opcode >> 3 & 0b111;
+        match operation_type {
+            0b000 => todo!("add r8"),
+            0b001 => todo!("adc r8"),
+            0b010 => todo!("sub r8"),
+            0b011 => todo!("sbc r8"),
+            0b100 => todo!("and r8"),
+            0b101 => todo!("xor r8"),
+            0b110 => todo!("or r8"),
+            0b111 => todo!("cp r8"),
+            _ => unreachable!("operation_type is three bit"),
+        }
+    }
+
+    fn dispatch_block_3(&mut self, bus: &mut Bus, opcode: u8) {
+        assert!(opcode >> 6 == 0b11);
+        let last_3 = opcode & 0b111;
+        if last_3 == 0b110 {
+            let arithmetic_type = opcode >> 3 & 0b111;
+            let _imm8 = self.fetch(bus);
+            //arithetic imm8
+            match arithmetic_type {
+                0b000 => todo!("add"),
+                0b001 => todo!("adc"),
+                0b010 => todo!("sub"),
+                0b011 => todo!("sbc"),
+                0b100 => todo!("and"),
+                0b101 => todo!("xor"),
+                0b110 => todo!("or"),
+                0b111 => todo!("cp"),
+                _ => unreachable!("arithmetic_type is only 3bit"),
+            }
+        }
+    }
+
+    fn fetch(&mut self, bus: &mut Bus) -> u8 {
+        let byte = bus.read(self.pc);
+        self.pc = self.pc.wrapping_add(1);
+        byte
+    }
+
+    pub fn step(&mut self, bus: &mut Bus) {
+        let opcode = self.fetch(bus);
+        let block = opcode >> 6;
+        match block {
+            0b00 => self.dispatch_block_0(bus, opcode),
+            0b01 => self.load_register_register(bus, opcode),
+            0b10 => self.arithmetic_8bit(bus, opcode),
+            0b11 => self.dispatch_block_3(bus, opcode),
+            _ => unreachable!("operation block type is 2bit"),
         }
     }
 }
