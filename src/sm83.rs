@@ -16,8 +16,12 @@ pub struct SM83 {
     hl: u16, //HL Register
     ir: u8,  //instruction register
     ie: u8,  //interrupt enable
+
+    operation_table: [Instruction; 256],
+    operation_prefix_table: [Instruction; 256],
 }
 
+#[derive(Debug, Clone, Copy)]
 enum RegisterName {
     B,
     C,
@@ -33,22 +37,34 @@ enum RegisterName {
     PC,
 }
 
-impl From<RegisterR8> for RegisterName {
-    fn from(value: RegisterR8) -> Self {
+impl From<R8> for RegisterName {
+    fn from(value: R8) -> Self {
         match value {
-            RegisterR8::B => Self::B,
-            RegisterR8::C => Self::C,
-            RegisterR8::D => Self::D,
-            RegisterR8::E => Self::E,
-            RegisterR8::H => Self::H,
-            RegisterR8::L => Self::L,
-            RegisterR8::HL => Self::HL,
-            RegisterR8::A => Self::A,
+            R8::B => Self::B,
+            R8::C => Self::C,
+            R8::D => Self::D,
+            R8::E => Self::E,
+            R8::H => Self::H,
+            R8::L => Self::L,
+            R8::HL => Self::HL,
+            R8::A => Self::A,
         }
     }
 }
 
-enum RegisterR8 {
+impl From<R16> for RegisterName {
+    fn from(value: R16) -> Self {
+        match value {
+            R16::BC => RegisterName::BC,
+            R16::DE => RegisterName::DE,
+            R16::HL => RegisterName::HL,
+            R16::SP => RegisterName::SP,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum R8 {
     B = 0,
     C = 1,
     D = 2,
@@ -59,42 +75,86 @@ enum RegisterR8 {
     A = 7,
 }
 
-impl TryFrom<u8> for RegisterR8 {
-    type Error = u8;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Ok(match value {
-            0 => RegisterR8::B,
-            1 => RegisterR8::C,
-            2 => RegisterR8::D,
-            3 => RegisterR8::E,
-            4 => RegisterR8::H,
-            5 => RegisterR8::L,
-            6 => RegisterR8::HL,
-            7 => RegisterR8::A,
-            _ => return Err(value),
-        })
+impl From<u8> for R8 {
+    fn from(value: u8) -> Self {
+        match value & 0b111 {
+            0 => R8::B,
+            1 => R8::C,
+            2 => R8::D,
+            3 => R8::E,
+            4 => R8::H,
+            5 => R8::L,
+            6 => R8::HL,
+            7 => R8::A,
+            _ => unreachable!(),
+        }
     }
 }
 
-enum RegisterR16 {
+#[derive(Debug, Clone, Copy)]
+enum LoadArg {
+    R8(R8),
+    R16(R16),
+    R16Mem(R16Mem),
+    Imm8,
+    Imm16,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum R16 {
     BC = 0,
     DE = 1,
     HL = 2,
     SP = 3,
 }
 
-enum RegisterR16Stk {
+impl From<u8> for R16 {
+    fn from(value: u8) -> Self {
+        match value & 0b11 {
+            0 => Self::BC,
+            1 => Self::DE,
+            2 => Self::HL,
+            3 => Self::SP,
+            _ => unreachable!(),
+        }
+    }
+}
+
+enum R16Stk {
     BC = 0,
     DE = 1,
     HL = 2,
     AF = 3,
 }
-enum RegisterR16Mem {
+#[derive(Debug, Clone, Copy)]
+enum R16Mem {
     BC = 0,
     DE = 1,
-    HLPlus = 2,
-    HLMinus = 3,
+    HLI = 2,
+    HLD = 3,
+}
+
+impl From<R16Mem> for RegisterName {
+    fn from(value: R16Mem) -> Self {
+        match value {
+            R16Mem::BC => Self::BC,
+            R16Mem::DE => Self::DE,
+            R16Mem::HLI => Self::HL,
+            R16Mem::HLD => Self::HL,
+        }
+    }
+}
+
+impl From<u8> for R16Mem {
+    fn from(value: u8) -> Self {
+        match value & 0b11 {
+            0 => Self::BC,
+            1 => Self::DE,
+            2 => Self::HLI,
+            3 => Self::HLD,
+            _ => unreachable!(),
+        }
+    }
 }
 
 enum RegisterCond {
@@ -105,15 +165,15 @@ enum RegisterCond {
 }
 
 enum Register {
-    R8(RegisterR8),
-    R16(RegisterR16),
-    R16Mem(RegisterR16Mem),
-    R16Stk(RegisterR16Stk),
+    R8(R8),
+    R16(R16),
+    R16Mem(R16Mem),
+    R16Stk(R16Stk),
     Immediate16,
     Immediate8,
 }
 
-enum RegisterFlag {
+enum Flag {
     Zero = 7,
     Substraction = 6,
     HalfCarry = 5,
@@ -143,7 +203,27 @@ impl HighLow for u16 {
         (*self >> 8) as u8
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+struct Instruction {
+    operation: fn(&mut SM83, &mut Bus, opcode: u8),
+    name: &'static str,
+}
+
+impl Default for Instruction {
+    fn default() -> Self {
+        Self {
+            operation: SM83::illegal,
+            name: "illegal",
+        }
+    }
+}
+
 impl SM83 {
+    fn illegal(&mut self, _bus: &mut Bus, opcode: u8) {
+        panic!("executing illegal instruction: {opcode:#X}")
+    }
+
     //https://gbdev.io/pandocs/Power_Up_Sequence.html?highlight=boot#cpu-registers
     pub fn new() -> Self {
         let mut cpu = SM83 {
@@ -157,12 +237,15 @@ impl SM83 {
             hl: 0, //HL Register
             ir: 0, //instruction register
             ie: 0, //interrupt enable
+
+            operation_table: [Instruction::default(); 256],
+            operation_prefix_table: [Instruction::default(); 256],
         };
         cpu.set_register(RegisterName::A, 0x11);
         cpu.set_register(RegisterName::D, 0xFF);
         cpu.set_register(RegisterName::H, 0x56);
         cpu.set_register(RegisterName::L, 0x0D);
-        cpu.set_flag(RegisterFlag::Zero);
+        cpu.set_flag(Flag::Zero, true);
         cpu
     }
 
@@ -200,15 +283,23 @@ impl SM83 {
         }
     }
 
-    fn set_flag(&mut self, flag: RegisterFlag) {
-        self.af |= 1 << (flag as u8);
+    fn set_flag(&mut self, flag: Flag, value: bool) {
+        self.af |= (value as u16) << (flag as u8);
     }
 
-    fn get_flag(&mut self, flag: RegisterFlag) -> bool {
+    //set flags: z = zero, n = substraction, h = half_carry, c = carry
+    fn set_flags(&mut self, z: bool, n: bool, h: bool, c: bool) {
+        self.set_flag(Flag::Zero, z);
+        self.set_flag(Flag::Substraction, n);
+        self.set_flag(Flag::HalfCarry, h);
+        self.set_flag(Flag::Carry, c);
+    }
+
+    fn get_flag(&mut self, flag: Flag) -> bool {
         (self.af & 1 << (flag as u8)) != 0
     }
 
-    fn clear_flag(&mut self, flag: RegisterFlag) {
+    fn clear_flag(&mut self, flag: Flag) {
         self.af &= !(1 << flag as u8);
     }
 
@@ -261,34 +352,257 @@ impl SM83 {
         }
     }
 
-    //block 1
-    fn load_register_register(&mut self, bus: &mut Bus, opcode: u8) {
-        assert!(opcode >> 6 == 0b01);
-        let source: RegisterR8 = (opcode & 0b111).try_into().unwrap();
-        let dest: RegisterR8 = (opcode >> 3 & 0b111).try_into().unwrap();
+    fn imm8(&mut self, bus: &mut Bus) -> u8 {
+        self.fetch(bus)
+    }
 
-        match (source, dest) {
-            (RegisterR8::HL, RegisterR8::HL) => {
-                todo!("implement halt instruction")
-            }
-            (src, dst) => {
-                self.set_register(dst.into(), self.get_register(src.into()));
-            }
+    fn imm16(&mut self, bus: &mut Bus) -> u16 {
+        let byte1 = self.fetch(bus) as u16;
+        let byte2 = self.fetch(bus) as u16;
+        (byte2 << 8) | byte1
+    }
+
+    fn get_r8(&mut self, bus: &mut Bus, r8: R8) -> u8 {
+        match r8 {
+            R8::HL => bus.read(self.get_register(RegisterName::HL)),
+            x => self.get_register(x.into()) as u8,
         }
+    }
+
+    fn set_r8(&mut self, bus: &mut Bus, r8: R8) -> u16 {
+        match r8 {
+            R8::HL => bus.read(self.get_register(RegisterName::HL)) as u16,
+            x => self.get_register(x.into()),
+        }
+    }
+
+    fn ld_hl_sp_imm8(&mut self, bus: &mut Bus) {
+        let sp = self.sp;
+        let signed_imm8 = self.imm8(bus) as i8;
+        let offset = signed_imm8 as i16 as u16; //imm8 is signed
+        let low = (signed_imm8 as u8) as u16;
+        self.hl = sp.wrapping_add(offset);
+        self.set_flags(
+            false,
+            false,
+            (sp & 0x000F) + (low & 0x000F) > 0x000F,
+            (sp & 0x00FF) + (low & 0x00FF) > 0x00FF,
+        );
+    }
+
+    fn ld(&mut self, bus: &mut Bus, dst: LoadArg, src: LoadArg) {
+        let src_byte: u16 = match src {
+            LoadArg::R8(register_r8) => self.get_r8(bus, register_r8) as u16,
+            LoadArg::R16(register_r16) => self.get_register(register_r16.into()),
+            LoadArg::R16Mem(register_r16_mem) => {
+                let addr = self.get_register(register_r16_mem.into());
+                self.hl = match register_r16_mem {
+                    R16Mem::HLI => self.hl.wrapping_add(1),
+                    R16Mem::HLD => self.hl.wrapping_sub(1),
+                    _ => self.hl,
+                };
+                bus.read(addr) as u16
+            }
+            LoadArg::Imm8 => self.imm8(bus) as u16,
+            LoadArg::Imm16 => self.imm16(bus),
+        };
+
+        match dst {
+            LoadArg::R8(register_r8) => self.set_register(register_r8.into(), src_byte),
+            LoadArg::R16(register_r16) => self.set_register(register_r16.into(), src_byte),
+            LoadArg::R16Mem(register_r16_mem) => {
+                let addr = self.get_register(register_r16_mem.into());
+                bus.write(addr, src_byte as u8);
+            }
+            LoadArg::Imm8 => unreachable!("dst can't be a Imm8"),
+            LoadArg::Imm16 => {
+                let addr = self.imm16(bus);
+                bus.write(addr, (src_byte & 0xFF) as u8);
+                if let LoadArg::R16(_) = src {
+                    //used of LD [imm16],SP
+                    bus.write(addr.wrapping_add(1), (src_byte >> 8) as u8);
+                }
+            }
+        };
+    }
+
+    fn dipatch_ld(&mut self, bus: &mut Bus, opcode: u8) {
+        match opcode {
+            0b11101010 => self.ld(bus, LoadArg::Imm16, LoadArg::R8(R8::A)), //todo!("ld [imm16], a"),
+            0b11111010 => self.ld(bus, LoadArg::R8(R8::A), LoadArg::Imm16), //todo!("ld a, [imm16]"),
+            0b11111000 => self.ld_hl_sp_imm8(bus), //todo!("ld hl, sp + imm8"),
+            0b11111001 => self.ld(bus, LoadArg::R16(R16::SP), LoadArg::R16(R16::HL)), //todo!("ld sp, hl"),
+            _ => (),
+        }
+
+        let bit_76 = opcode >> 6;
+        match bit_76 {
+            0b00 => {
+                let bit_3210 = opcode & 0b1111;
+                match bit_3210 {
+                    0b0001 => self.ld(bus, LoadArg::R16(R16::from(opcode >> 4)), LoadArg::Imm16), //todo!("ld r16, imm16"),
+                    0b0010 => self.ld(
+                        bus,
+                        LoadArg::R16Mem(R16Mem::from(opcode >> 4)),
+                        LoadArg::R8(R8::A),
+                    ), //todo!("ld [r16mem], a"),
+                    0b0101 => self.ld(
+                        bus,
+                        LoadArg::R8(R8::A),
+                        LoadArg::R16Mem(R16Mem::from(opcode >> 4)),
+                    ), //todo!("ld a, [r16mem]"),
+                    0b1000 => self.ld(bus, LoadArg::Imm16, LoadArg::R16(R16::SP)), //todo!("ld [imm16], sp"),
+                    _ => (),
+                }
+            }
+            0b01 => {
+                let src: R8 = (opcode & 0b111).into();
+                let dst: R8 = (opcode >> 3 & 0b111).into();
+                self.ld(bus, LoadArg::R8(dst), LoadArg::R8(src));
+            }
+            0b10 => unreachable!(),
+            0b11 => unreachable!(),
+            _ => unreachable!(),
+        }
+    }
+
+    /*Arimetic 8bit */
+
+    fn add8(&mut self, value: u8, carry: bool) {
+        let a = self.get_register(RegisterName::A) as u8;
+        let c = carry as u8;
+        let output = a.wrapping_add(value).wrapping_add(carry as u8);
+
+        self.set_flag(Flag::Zero, output == 0);
+        self.set_flag(Flag::Substraction, false);
+        self.set_flag(
+            Flag::HalfCarry,
+            (a as u16 & 0xF) + (value as u16 & 0xF) + (c as u16 & 0xF) > 0xF,
+        );
+        self.set_flag(
+            Flag::Carry,
+            (a as u16 & 0xFF) + (value as u16 & 0xFF) + (c as u16 & 0xFF) > 0x00FF,
+        );
+        self.set_register(RegisterName::A, output as u16);
+    }
+
+    fn add(&mut self, bus: &mut Bus, param: LoadArg) {
+        let value = match param {
+            LoadArg::R8(r8) => self.get_r8(bus, r8),
+            LoadArg::Imm8 => self.imm8(bus),
+            _ => unreachable!(),
+        };
+
+        self.add8(value, false);
+    }
+
+    fn adc(&mut self, bus: &mut Bus, param: LoadArg) {
+        let value = match param {
+            LoadArg::R8(r8) => self.get_r8(bus, r8),
+            LoadArg::Imm8 => self.imm8(bus),
+            _ => unreachable!(),
+        };
+        let carry = self.get_flag(Flag::Carry);
+        self.add8(value, carry);
+    }
+
+    fn sub8(&mut self, value: u8, carry: bool) {
+        let a = self.get_register(RegisterName::A) as u8;
+        let c = carry as u8;
+        let output = a.wrapping_sub(value.wrapping_add(c));
+
+        self.set_flags(
+            output == 0,
+            true,
+            ((value as u16 & 0xF) + (c as u16 & 0xF)) > (a as u16 & 0xF),
+            ((value as u16 & 0xFF) + (c as u16 & 0xFF)) > (a as u16 & 0xFF),
+        );
+        self.set_register(RegisterName::A, output as u16);
+    }
+
+    fn sub(&mut self, bus: &mut Bus, param: LoadArg) {
+        let value = match param {
+            LoadArg::R8(r8) => self.get_r8(bus, r8),
+            LoadArg::Imm8 => self.imm8(bus),
+            _ => unreachable!(),
+        };
+        self.sub8(value, false);
+    }
+
+    fn sbc(&mut self, bus: &mut Bus, param: LoadArg) {
+        let value = match param {
+            LoadArg::R8(r8) => self.get_r8(bus, r8),
+            LoadArg::Imm8 => self.imm8(bus),
+            _ => unreachable!(),
+        };
+        let carry = self.get_flag(Flag::Carry);
+        self.sub8(value, carry);
+    }
+
+    fn and(&mut self, bus: &mut Bus, param: LoadArg) {
+        let value = match param {
+            LoadArg::R8(r8) => self.get_r8(bus, r8) as u16,
+            LoadArg::Imm8 => self.imm8(bus) as u16,
+            _ => unreachable!(),
+        };
+        let mut a = self.get_register(RegisterName::A);
+        a &= value;
+        self.set_register(RegisterName::A, a);
+        self.set_flags(a == 0, false, true, false);
+    }
+
+    fn xor(&mut self, bus: &mut Bus, param: LoadArg) {
+        let value = match param {
+            LoadArg::R8(r8) => self.get_r8(bus, r8) as u16,
+            LoadArg::Imm8 => self.imm8(bus) as u16,
+            _ => unreachable!(),
+        };
+
+        let mut a = self.get_register(RegisterName::A);
+        a ^= value;
+        self.set_register(RegisterName::A, a);
+        self.set_flags(a == 0, false, false, false);
+    }
+
+    fn or(&mut self, bus: &mut Bus, param: LoadArg) {
+        let value = match param {
+            LoadArg::R8(r8) => self.get_r8(bus, r8) as u16,
+            LoadArg::Imm8 => self.imm8(bus) as u16,
+            _ => unreachable!(),
+        };
+
+        let mut a = self.get_register(RegisterName::A);
+        a |= value;
+        self.set_register(RegisterName::A, a);
+        self.set_flags(a == 0, false, false, false);
+    }
+
+    fn cp(&mut self, bus: &mut Bus, param: LoadArg) {
+        let value = match param {
+            LoadArg::R8(r8) => self.get_r8(bus, r8),
+            LoadArg::Imm8 => self.imm8(bus),
+            _ => unreachable!(),
+        };
+
+        let a_original = self.get_register(RegisterName::A);
+        self.sub8(value, false);
+        //reset a to it's original value because compare only change the flags
+        self.set_register(RegisterName::A, a_original);
     }
 
     fn arithmetic_8bit(&mut self, bus: &mut Bus, opcode: u8) {
         assert!(opcode >> 6 == 0b10);
         let operation_type = opcode >> 3 & 0b111;
+        let r = LoadArg::R8(opcode.into());
         match operation_type {
-            0b000 => todo!("add r8"),
-            0b001 => todo!("adc r8"),
-            0b010 => todo!("sub r8"),
-            0b011 => todo!("sbc r8"),
-            0b100 => todo!("and r8"),
-            0b101 => todo!("xor r8"),
-            0b110 => todo!("or r8"),
-            0b111 => todo!("cp r8"),
+            0b000 => self.add(bus, r), //add r8
+            0b001 => self.adc(bus, r), //adc r8
+            0b010 => self.sub(bus, r), //sub r8
+            0b011 => self.sbc(bus, r), //sbc r8
+            0b100 => self.and(bus, r), //and r8
+            0b101 => self.xor(bus, r), //xor r8
+            0b110 => self.or(bus, r),  //or r8
+            0b111 => self.cp(bus, r),  //cp r8
             _ => unreachable!("operation_type is three bit"),
         }
     }
@@ -298,17 +612,16 @@ impl SM83 {
         let last_3 = opcode & 0b111;
         if last_3 == 0b110 {
             let arithmetic_type = opcode >> 3 & 0b111;
-            let _imm8 = self.fetch(bus);
             //arithetic imm8
             match arithmetic_type {
-                0b000 => todo!("add"),
-                0b001 => todo!("adc"),
-                0b010 => todo!("sub"),
-                0b011 => todo!("sbc"),
-                0b100 => todo!("and"),
-                0b101 => todo!("xor"),
-                0b110 => todo!("or"),
-                0b111 => todo!("cp"),
+                0b000 => self.add(bus, LoadArg::Imm8), //add imm8
+                0b001 => self.adc(bus, LoadArg::Imm8), //adc imm8
+                0b010 => self.sub(bus, LoadArg::Imm8), //sub imm8
+                0b011 => self.sbc(bus, LoadArg::Imm8), //sbc imm8
+                0b100 => self.and(bus, LoadArg::Imm8), //and imm8
+                0b101 => self.xor(bus, LoadArg::Imm8), //xor imm8
+                0b110 => self.or(bus, LoadArg::Imm8),  //or imm8
+                0b111 => self.cp(bus, LoadArg::Imm8),  //cp imm8
                 _ => unreachable!("arithmetic_type is only 3bit"),
             }
         }
@@ -325,7 +638,7 @@ impl SM83 {
         let block = opcode >> 6;
         match block {
             0b00 => self.dispatch_block_0(bus, opcode),
-            0b01 => self.load_register_register(bus, opcode),
+            0b01 => self.dipatch_ld(bus, opcode),
             0b10 => self.arithmetic_8bit(bus, opcode),
             0b11 => self.dispatch_block_3(bus, opcode),
             _ => unreachable!("operation block type is 2bit"),
