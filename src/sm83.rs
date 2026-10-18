@@ -92,10 +92,32 @@ impl From<u8> for R8 {
 }
 
 #[derive(Debug, Clone, Copy)]
+enum Condition {
+    Z = 0,
+    NZ = 1,
+    C = 2,
+    NC = 3,
+    NoCondition
+}
+
+impl From<u8> for Condition {
+    fn from(value: u8) -> Self {
+        match value & 0b11 {
+            0 => Condition::Z,
+            1 => Condition::NZ,
+            2 => Condition::C,
+            3 => Condition::NC,
+            _ => unreachable!()
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 enum LoadArg {
     R8(R8),
     R16(R16),
     R16Mem(R16Mem),
+    Condition(Condition), //condition
     Imm8,
     Imm16,
 }
@@ -173,6 +195,7 @@ enum Register {
     Immediate8,
 }
 
+#[derive(Debug, Clone, Copy)]
 enum Flag {
     Zero = 7,
     Substraction = 6,
@@ -312,10 +335,10 @@ impl SM83 {
         }
         let last_4 = opcode & 0b1111;
         match last_4 {
-            0b0001 => todo!("ld r16 imm16"),
-            0b0010 => todo!("ld [r16mem] a"),
-            0b1010 => todo!("ld a [r16mem]"),
-            0b1000 => todo!("ld [imm16] sp"),
+            0b0001 => self.dipatch_ld(bus, opcode),//ld r16 imm16
+            0b0010 => self.dipatch_ld(bus, opcode),//ld [r16mem] a
+            0b1010 => self.dipatch_ld(bus, opcode),//ld a [r16mem]
+            0b1000 => self.dipatch_ld(bus, opcode),//ld [imm16] sp
             0b0011 => todo!("inc r16"),
             0b1011 => todo!("dec r16"),
             0b1001 => todo!("add hl, r16"),
@@ -324,7 +347,7 @@ impl SM83 {
                 match last_3 {
                     0b100 => todo!("inc r8"),
                     0b101 => todo!("dec r8"),
-                    0b110 => todo!("ld r8 imm8"),
+                    0b110 => self.dipatch_ld(bus, opcode), //"ld r8 imm8
                     0b111 => {
                         let bit_543 = opcode >> 3 & 0b111;
                         match bit_543 {
@@ -405,6 +428,7 @@ impl SM83 {
             }
             LoadArg::Imm8 => self.imm8(bus) as u16,
             LoadArg::Imm16 => self.imm16(bus),
+            _ => unreachable!()
         };
 
         match dst {
@@ -423,6 +447,7 @@ impl SM83 {
                     bus.write(addr.wrapping_add(1), (src_byte >> 8) as u8);
                 }
             }
+            _ => unreachable!()
         };
     }
 
@@ -607,10 +632,40 @@ impl SM83 {
         }
     }
 
+    fn jp(&mut self, bus: &mut Bus, param: LoadArg, dest : LoadArg) {
+        
+        let can_jump = match param {
+            LoadArg::Condition(c) => {
+                match c {
+                    Condition::Z => self.get_flag(Flag::Zero),
+                    Condition::NZ => !self.get_flag(Flag::Zero),
+                    Condition::C => self.get_flag(Flag::Carry),
+                    Condition::NC => !self.get_flag(Flag::Carry),
+                    Condition::NoCondition => true,
+                }
+            }
+            _ => unreachable!()
+        };
+
+        let jump_addr = match dest {
+            LoadArg::Imm16 => self.imm16(bus),
+            LoadArg::R16(R16::HL) => self.get_register(RegisterName::HL),
+            _ => unreachable!()
+        };
+
+        if !can_jump {
+            return ;
+        }
+
+        self.set_register(RegisterName::PC, jump_addr);
+    }
+
     fn dispatch_block_3(&mut self, bus: &mut Bus, opcode: u8) {
         assert!(opcode >> 6 == 0b11);
-        let last_3 = opcode & 0b111;
-        if last_3 == 0b110 {
+        let bit_765 = (opcode & 0b11100000) >> 5;
+        let bit_543 = (opcode & 0b00111000) >> 3;
+        let bit_210 = opcode & 0b00000111;
+        if bit_210 == 0b110 {
             let arithmetic_type = opcode >> 3 & 0b111;
             //arithetic imm8
             match arithmetic_type {
@@ -624,7 +679,48 @@ impl SM83 {
                 0b111 => self.cp(bus, LoadArg::Imm8),  //cp imm8
                 _ => unreachable!("arithmetic_type is only 3bit"),
             }
+            return;
         }
+        let bit_43 = opcode >> 3 & 0b11;
+        match (bit_765, bit_43, bit_210) {
+            (0b110, 0b01, 0b001) => todo!("ret"),
+            (0b110, 0b11, 0b001) => todo!("reti"),
+            (0b110, _cond, 0b000) => todo!("ret cond"),
+            (0b110, cond, 0b010) => return self.jp(bus, LoadArg::Condition(cond.into()), LoadArg::Imm16),//todo!("jp cond, imm16"),
+            (0b110, 0b00, 0b011) => return self.jp(bus, LoadArg::Condition(Condition::NoCondition), LoadArg::Imm16),//todo!("jp imm16"),
+            (0b111, 0b01, 0b001) => return self.jp(bus, LoadArg::Condition(Condition::NoCondition), LoadArg::R16(R16::HL)),//todo!("jp hl"),
+            (0b110, _cond, 0b100) => todo!("call cond, imm16"),
+            (0b110, 0b01, 0b101) => todo!("call imm16"),
+            (_, _, _) => (),
+        }
+        if opcode & 0b11000111 == 0b11000111 {
+            todo!("rst tgt3")
+        }
+
+        let bit_3210 = opcode & 0b1111;
+        match bit_3210 {
+            0b0001 => todo!("pop r16stk"),
+            0b0101 => todo!("push r16stk"),
+            _ => ()
+        }
+
+        match opcode {
+            0b11001011 => todo!("prefix"),
+            0b11100010 => todo!("ldh [c], a"),
+            0b11100000 => todo!("ldh [imm8], a"),
+            0b11101010 => self.ld(bus, LoadArg::Imm16, LoadArg::R8(R8::A)),//todo!("ld [imm16], a"),
+            0b11110010 => todo!("ldh a, [c]"),
+            0b11110000 => todo!("ldh a, [imm8]"),
+            0b11111010 => self.ld(bus, LoadArg::R8(R8::A), LoadArg::Imm16),//todo!("ld a, [imm16]"),
+            0b11101000 => todo!("add sp, imm8"),
+            0b11111000 => self.ld_hl_sp_imm8(bus),//todo!("ld hl, sp + imm8"),
+            0b11111001 => self.ld(bus, LoadArg::R16(R16::SP), LoadArg::R16(R16::HL)),//todo!("ld sp, hl"),
+            0b11110011 => todo!("di"),
+            0b11111011 => todo!("ei"),
+            _ => unreachable!("opcode: {opcode:X}")
+        }
+
+
     }
 
     fn fetch(&mut self, bus: &mut Bus) -> u8 {
@@ -635,6 +731,7 @@ impl SM83 {
 
     pub fn step(&mut self, bus: &mut Bus) {
         let opcode = self.fetch(bus);
+        println!("opcode : {opcode:X} {opcode:b}");
         let block = opcode >> 6;
         match block {
             0b00 => self.dispatch_block_0(bus, opcode),
