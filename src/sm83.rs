@@ -572,8 +572,13 @@ impl SM83 {
     fn inc(&mut self, bus: &mut Bus, register : LoadArg, _1 : LoadArg) {
         match register {
             LoadArg::R8(r8) => {
-                let modified = self.get_r8(bus, r8).wrapping_add(1);
-                self.set_r8(bus, r8, modified)
+                let original = self.get_r8(bus, r8);
+                let modified = original.wrapping_add(1);
+                self.set_r8(bus, r8, modified);
+
+                self.set_flag(Flag::Zero, modified == 0);
+                self.set_flag(Flag::Substraction, false);
+                self.set_flag(Flag::HalfCarry, original & 0xF < modified & 0xF);
             },
             LoadArg::R16(r16) => self.set_register(r16.into(), self.get_register(r16.into()).wrapping_add(1)),
             _ => unreachable!()
@@ -583,8 +588,13 @@ impl SM83 {
     fn dec(&mut self, bus: &mut Bus, register : LoadArg, _1 : LoadArg) {
         match register {
             LoadArg::R8(r8) => {
-                let modified = self.get_r8(bus, r8).wrapping_sub(1);
-                self.set_r8(bus, r8, modified)
+                let original = self.get_r8(bus, r8);
+                let modified = original.wrapping_sub(1);
+                self.set_r8(bus, r8, modified);
+
+                self.set_flag(Flag::Zero, modified == 0);
+                self.set_flag(Flag::Substraction, true);
+                self.set_flag(Flag::HalfCarry, original & 0xF > modified & 0xF);
             },
             LoadArg::R16(r16) => self.set_register(r16.into(), self.get_register(r16.into()).wrapping_sub(1)),
             _ => unreachable!()
