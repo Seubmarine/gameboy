@@ -11,6 +11,5 @@ pub fn uppercase(input : TokenStream) -> TokenStream {
     modified.push_str(&original.to_uppercase());
     modified.push('"');
     let token_modified : TokenStream = TokenStream::from_str(&modified).unwrap();
-    println!("uppercase: {token_modified}");
     token_modified
 }
