@@ -14,6 +14,7 @@ enum RegisterName {
     H,
     L,
     A,
+    AF,
     HL,
     BC,
     DE,
@@ -101,6 +102,7 @@ enum LoadArg {
     R8(R8),
     R16(R16),
     R16Mem(R16Mem),
+    R16Stk(R16Stk),
     Condition(Condition), //condition
     Imm8,
     Imm16,
@@ -127,12 +129,37 @@ impl From<u8> for R16 {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 enum R16Stk {
     BC = 0,
     DE = 1,
     HL = 2,
     AF = 3,
 }
+
+impl From<R16Stk> for RegisterName {
+    fn from(value: R16Stk) -> Self {
+        match value {
+            R16Stk::BC => Self::BC,
+            R16Stk::DE => Self::DE,
+            R16Stk::HL => Self::HL,
+            R16Stk::AF => Self::AF,
+        }
+    }
+}
+
+impl From<u8> for R16Stk {
+    fn from(value: u8) -> Self {
+        match value & 0b11 {
+            0 => Self::BC,
+            1 => Self::DE,
+            2 => Self::HL,
+            3 => Self::AF,
+            _ => unreachable!()
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 enum R16Mem {
     BC = 0,
@@ -225,6 +252,12 @@ impl From<&LoadArg> for &str {
                 R8::HL => "[HL]",
                 R8::A => "A",
             },
+            LoadArg::R16Stk(r16stk) => match r16stk {
+                R16Stk::BC => "BC",
+                R16Stk::DE => "DE",
+                R16Stk::HL => "HL",
+                R16Stk::AF => "AF",
+            }
             LoadArg::R16(r16) => match r16 {
                 R16::BC => "BC",
                 R16::DE => "DE",
@@ -492,9 +525,10 @@ impl SM83 {
                     }
 
                     let bit_3210 = opcode & 0b1111;
+                    let bit_54 = opcode >> 4 & 0b11;
                     match bit_3210 {
-                        0b0001 => return op_todo!("pop r16stk"),
-                        0b0101 => return op_todo!("push r16stk"),
+                        0b0001 => return op!(pop, LoadArg::R16Stk(bit_54.into())),
+                        0b0101 => return op!(push, LoadArg::R16Stk(bit_54.into())),
                         _ => return op_todo!("illegal"),
                     };
                 },
@@ -525,6 +559,7 @@ impl SM83 {
             RegisterName::DE => self.de,
             RegisterName::SP => self.sp,
             RegisterName::PC => self.pc,
+            RegisterName::AF => self.af,
         }
     }
 
@@ -542,6 +577,7 @@ impl SM83 {
             RegisterName::DE => self.de = value,
             RegisterName::SP => self.sp = value,
             RegisterName::PC => self.pc = value,
+            RegisterName::AF => self.af = value,
         }
     }
 
@@ -873,6 +909,25 @@ impl SM83 {
         out
     }
 
+    fn push(&mut self, bus: &mut Bus, reg: LoadArg, _1 : LoadArg) {
+        let value = match reg {
+            LoadArg::R16Stk(r16stk) => self.get_register(r16stk.into()),
+            _ => unreachable!()
+        };
+
+        self.stack_push16(bus, value);
+    }
+
+    fn pop(&mut self, bus: &mut Bus, reg: LoadArg, _1 : LoadArg) {
+        let value = self.stack_pop16(bus);
+
+        match reg {
+            LoadArg::R16Stk(r16stk) => self.set_register(r16stk.into(), value),
+            _ => unreachable!()
+        };
+
+    }
+
     fn call(&mut self, bus: &mut Bus, cond: LoadArg, addr: LoadArg) {
         let can_call = match cond {
             LoadArg::Condition(cond) => self.is_cond(cond),
@@ -954,6 +1009,10 @@ impl SM83 {
                 let value = bus.read(reg);
                 format!("0x{reg:04X}:0x{value:04X}")
             },
+            LoadArg::R16Stk(r16_stk) => {
+                let value = self.get_register(r16_stk.into());
+                format!("0x{value:04X}")
+            }
             LoadArg::Condition(condition) => {
                 let bool = self.is_cond(condition);
                 format!("{bool}")
