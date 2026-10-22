@@ -878,18 +878,83 @@ impl SM83 {
         self.pc = addr;
     }
 
+    fn peek8(&mut self, bus: &mut Bus) -> u8 {
+        let byte = bus.read(self.pc);
+        byte
+    }
+
+    fn peek16(&mut self, bus: &mut Bus) -> u16 {
+        let low = bus.read(self.pc) as u16;
+        let high = bus.read(self.pc + 1) as u16;
+        high << 8 | low
+    }
+
     fn fetch(&mut self, bus: &mut Bus) -> u8 {
         let byte = bus.read(self.pc);
         self.pc = self.pc.wrapping_add(1);
         byte
     }
 
+    fn debug_arg(&mut self, bus: &mut Bus, arg: LoadArg) -> String {
+        match arg {
+            LoadArg::R8(r8) => {
+                let value = self.get_r8(bus, r8);
+                format!("0x{value:02X}")
+            },
+            LoadArg::R16(r16) => {
+                let value = self.get_register(r16.into());
+                format!("0x{value:04X}")
+            },
+            LoadArg::R16Mem(r16_mem) => {
+                let reg = match r16_mem {
+                    R16Mem::BC => self.bc,
+                    R16Mem::DE => self.de,
+                    R16Mem::HLI => self.hl,
+                    R16Mem::HLD => self.hl,
+                };
+                let value = bus.read(reg);
+                format!("0x{reg:04X}:0x{value:04X}")
+            },
+            LoadArg::Condition(condition) => {
+                let bool = self.is_cond(condition);
+                format!("{bool}")
+            },
+            LoadArg::Imm8 => {
+                let imm8 = self.peek8(bus);
+                format!("0x{imm8:02X}")  
+            },
+            LoadArg::Imm16 => {
+                let imm16 = self.peek16(bus);
+                format!("0x{imm16:04X}")
+            },
+            LoadArg::Nothing => "".to_string(),
+        }
+    }
+
+    fn debug_op(&mut self, bus: &mut Bus, ins: &Instruction) {
+        let pc = self.pc.wrapping_sub(1);
+        let name = ins.name;
+        match (ins.arg1, ins.arg2) {
+            (LoadArg::Nothing, LoadArg::Nothing) => {
+                println!("0x{pc:04X}: {name}")
+            }
+            (arg1, LoadArg::Nothing) => {
+                let v1 = self.debug_arg(bus, arg1);
+                println!("0x{pc:04X}: {name} {arg1}[{v1}]")
+            }
+            (arg1, arg2) => {
+                let v1 = self.debug_arg(bus, arg1);
+                let v2 = self.debug_arg(bus, arg2);
+                println!("0x{pc:04X}: {name} {arg1}[{v1}] {arg2}[{v2}]")
+            }
+            
+        }
+    }
+
     pub fn step(&mut self, bus: &mut Bus) {
         let opcode = self.fetch(bus);
-        let pc = self.pc.wrapping_sub(1);
-        let op = &self.operation_table[opcode as usize];
-        println!("0x{pc:04X}: [0x{opcode:02X}] {op}");
-        println!("      {self}");
+        let op = self.operation_table[opcode as usize];
+        self.debug_op(bus, &op);
         (op.operation)(self, bus, op.arg1, op.arg2);
     }
 }
