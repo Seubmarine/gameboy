@@ -548,7 +548,11 @@ impl SM83 {
     }
 
     fn set_flag(&mut self, flag: Flag, value: bool) {
+        if value {
         self.af |= (value as u16) << (flag as u8);
+        } else {
+            self.af &= !(1 << (flag as u16));
+        }
     }
 
     //set flags: z = zero, n = substraction, h = half_carry, c = carry
@@ -560,11 +564,7 @@ impl SM83 {
     }
 
     fn get_flag(&mut self, flag: Flag) -> bool {
-        (self.af & 1 << (flag as u8)) != 0
-    }
-
-    fn clear_flag(&mut self, flag: Flag) {
-        self.af &= !(1 << flag as u8);
+        (self.af & (1 << (flag as u8))) != 0
     }
 
     fn nop(&mut self, _bus: &mut Bus, _0 : LoadArg, _1 : LoadArg) {}
@@ -956,5 +956,40 @@ impl SM83 {
         let op = self.operation_table[opcode as usize];
         self.debug_op(bus, &op);
         (op.operation)(self, bus, op.arg1, op.arg2);
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+
+    use crate::mbc::{mbc1::MBC1, rom_only::RomOnly};
+
+// Note this useful idiom: importing names from outer (for mod tests) scope.
+    use super::*;
+
+    #[test]
+    fn test_flag() {
+        let mut cpu = SM83::new();
+
+        cpu.af = 0;
+
+        cpu.set_flag(Flag::Zero, true);
+        assert!(cpu.get_flag(Flag::Zero) == true);
+
+        cpu.set_flag(Flag::Zero, false);
+        assert!(cpu.get_flag(Flag::Zero) == false);
+
+        cpu.set_flags(true, false, true, false);
+        assert!(cpu.get_flag(Flag::Zero) == true);
+        assert!(cpu.get_flag(Flag::Substraction) == false);
+        assert!(cpu.get_flag(Flag::HalfCarry) == true);
+        assert!(cpu.get_flag(Flag::Carry) == false);
+
+        cpu.set_flags(false, true, false, true);
+        assert!(cpu.get_flag(Flag::Zero) == false);
+        assert!(cpu.get_flag(Flag::Substraction) == true);
+        assert!(cpu.get_flag(Flag::HalfCarry) == false);
+        assert!(cpu.get_flag(Flag::Carry) == true);
     }
 }
