@@ -370,7 +370,7 @@ impl SM83 {
         match opcode {
             //block 0
             0b00000000 => op!(nop),
-            0b00011000 => op_todo!("jr imm8"),
+            0b00011000 => op!(jr, LoadArg::Condition(NoCondition), LoadArg::Imm8),
             0b00010000 => op_todo!("stop"),
             //block 1
             0b01110110 => Instruction { operation: |cpu, bus, _arg1, _arg2| Self::halt(cpu, bus), name: "HALT", arg1: LoadArg::Nothing, arg2: LoadArg::Nothing },
@@ -425,7 +425,7 @@ impl SM83 {
                         0b000 => {
                             if opcode & 0b11100111 == 0b00100000 {
                                 let bit_43 = opcode >> 3 & 0b11;
-                                return op_todo!("jr cond, imm8")
+                                return op!(jr, LoadArg::Condition(bit_43.into()), LoadArg::Imm8);
                             }
                         }
                         _ => (),
@@ -549,7 +549,7 @@ impl SM83 {
 
     fn set_flag(&mut self, flag: Flag, value: bool) {
         if value {
-        self.af |= (value as u16) << (flag as u8);
+            self.af |= (value as u16) << (flag as u8);
         } else {
             self.af &= !(1 << (flag as u16));
         }
@@ -839,6 +839,24 @@ impl SM83 {
         self.set_register(RegisterName::PC, jump_addr);
     }
 
+    fn jr(&mut self, bus: &mut Bus, cond: LoadArg, dest : LoadArg) {
+        let can_jump = match cond {
+            LoadArg::Condition(cond) => self.is_cond(cond),
+            _ => unreachable!()
+        };
+
+        let jump_addr = match dest {
+            LoadArg::Imm8 => self.imm8(bus) as i8,
+            _ => unreachable!()
+        };
+
+        if !can_jump {
+            return ;
+        }
+
+        self.pc = self.pc.wrapping_add_signed(jump_addr as i16);        
+    }
+
     fn stack_push16(&mut self, bus: &mut Bus, data : u16) {
         let low = (data & 0xFF) as u8;
         let high = ((data >> 8) & 0xFF) as u8;
@@ -853,7 +871,7 @@ impl SM83 {
         self.sp = self.sp.wrapping_add(1);
         let high = bus.read(self.sp);
         self.sp = self.sp.wrapping_add(1);
-        let out = (high as u16) << 8 + (low as u16);
+        let out = ((high as u16) << 8) | (low as u16);
         out
     }
 
