@@ -319,8 +319,7 @@ pub struct SM83 {
     de: u16,
 
     hl: u16, //HL Register
-    ir: u8,  //instruction register
-    ie: u8,  //interrupt enable
+    ime: bool,  //interrupt master enable
 
     operation_table: [Instruction; 256],
     operation_prefix_table: [Instruction; 256],
@@ -348,8 +347,7 @@ impl SM83 {
             de: 0,
 
             hl: 0, //HL Register
-            ir: 0, //instruction register
-            ie: 0, //interrupt enable
+            ime: false, //interrupt master enable
 
             operation_table: [Instruction::default(); 256],
             operation_prefix_table: [Instruction::default(); 256],
@@ -385,8 +383,8 @@ impl SM83 {
             0b11110010 => op_todo!("ldh a, [c]"),
             0b11110000 => op_todo!("ldh a, [imm8]"),
             0b11101000 => op_todo!("add sp, imm8"),
-            0b11110011 => op_todo!("di"),
-            0b11111011 => op_todo!("ei"),
+            0b11110011 => op!(di),
+            0b11111011 => op!(ei),
             
             _ => {
                 match block {
@@ -480,7 +478,7 @@ impl SM83 {
                     let bit_43 = opcode >> 3 & 0b11;
                     match (bit_765, bit_43, bit_210) {
                         (0b110, 0b01, 0b001) => return op!(ret, LoadArg::Condition(Condition::NoCondition), LoadArg::Nothing),//todo!("ret"),
-                        (0b110, 0b11, 0b001) => return op_todo!("reti"),
+                        (0b110, 0b11, 0b001) => return op!(reti),
                         (0b110, cond, 0b000) => return op!(ret, LoadArg::Condition(cond.into()), LoadArg::Nothing),// todo!("ret cond"),
                         (0b110, cond, 0b010) => return op!(jp, LoadArg::Condition(cond.into()), LoadArg::Imm16),//todo!("jp cond, imm16"),
                         (0b110, 0b00, 0b011) => return op!(jp, LoadArg::Condition(Condition::NoCondition), LoadArg::Imm16),//todo!("jp imm16"),
@@ -904,6 +902,19 @@ impl SM83 {
         }
         let addr = self.stack_pop16(bus);
         self.pc = addr;
+    }
+
+    fn ei(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
+        self.ime = true
+    }
+
+    fn di(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
+        self.ime = false
+    }
+
+    fn reti(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
+        self.ei(bus, LoadArg::Nothing, LoadArg::Nothing);
+        self.ret(bus, LoadArg::Condition(NoCondition), LoadArg::Nothing);
     }
 
     fn peek8(&mut self, bus: &mut Bus) -> u8 {
