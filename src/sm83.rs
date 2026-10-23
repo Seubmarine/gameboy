@@ -411,10 +411,10 @@ impl SM83 {
             0b11111000 => Instruction { operation: |cpu, bus, _arg1, _arg2| Self::ld_hl_sp_imm8(cpu, bus), name: "LD HL, SP + Imm8", arg1: LoadArg::Nothing, arg2: LoadArg::Nothing }, //todo!("ld hl, sp + imm8"),
             0b11111001 => op!(ld, LoadArg::R16(R16::SP), LoadArg::R16(R16::HL)), //todo!("ld sp, hl"),
             0b11001011 => op_todo!("prefix"),
-            0b11100010 => op_todo!("ldh [c], a"),
-            0b11100000 => op_todo!("ldh [imm8], a"),
-            0b11110010 => op_todo!("ldh a, [c]"),
-            0b11110000 => op_todo!("ldh a, [imm8]"),
+            0b11100010 => op!(ldh, LoadArg::R8(R8::C), LoadArg::R8(R8::A)),
+            0b11100000 => op!(ldh, LoadArg::Imm8, LoadArg::R8(R8::A)),
+            0b11110010 => op!(ldh, LoadArg::R8(R8::A), LoadArg::R8(R8::C)),
+            0b11110000 => op!(ldh, LoadArg::R8(R8::A), LoadArg::Imm8),
             0b11101000 => op_todo!("add sp, imm8"),
             0b11110011 => op!(di),
             0b11111011 => op!(ei),
@@ -717,6 +717,32 @@ impl SM83 {
             }
             _ => unreachable!()
         };
+    }
+
+    fn ldh(&mut self, bus: &mut Bus, dst: LoadArg, src: LoadArg) {
+        match (dst, src) {
+            (LoadArg::R8(R8::C), LoadArg::R8(R8::A)) => {
+                let a = self.get_register(RegisterName::A);
+                let c = self.get_register(RegisterName::C);
+                bus.write(0xFF00 | c, a as u8);
+            },
+            (LoadArg::Imm8, LoadArg::R8(R8::A)) => {
+                let a = self.get_register(RegisterName::A);
+                let imm8 = self.imm8(bus) as u16;
+                bus.write(0xFF00 | imm8, a as u8);
+            },
+            (LoadArg::R8(R8::A), LoadArg::R8(R8::C)) => {
+                let c = self.get_register(RegisterName::C);
+                let value = bus.read(0xFF00 | c);
+                self.set_register(RegisterName::A, value as u16);
+            },
+            (LoadArg::R8(R8::A), LoadArg::Imm8) => {
+                let imm8 = self.imm8(bus) as u16;
+                let value = bus.read(0xFF00 | imm8);
+                self.set_register(RegisterName::A, value as u16);
+            },
+            _ => unreachable!()
+        }
     }
 
     /*Arimetic 8bit */
