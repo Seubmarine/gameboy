@@ -465,7 +465,7 @@ impl SM83 {
                             0b1000 => return op!(ld, LoadArg::Imm16, LoadArg::R16(R16::SP)),
                             0b0011 => return op!(inc, LoadArg::R16(bit_54.into())),
                             0b1011 => return op!(dec, LoadArg::R16(bit_54.into())),
-                            0b1001 => return op_todo!("ADD HL, R16 "), // op!(add, LoadArg::R16(R16::HL), LoadArg::R16(bit_54.into())),
+                            0b1001 => return op!(add, LoadArg::R16(R16::HL), LoadArg::R16(bit_54.into())),
                             _ => (),
                         };
 
@@ -475,14 +475,14 @@ impl SM83 {
                             0b101 => return op!(dec, LoadArg::R8(bit_543.into())),
                             0b110 => return op!(ld, LoadArg::R8(bit_543.into()), LoadArg::Imm8),
                             0b111 => match bit_543 & 0b111 {
-                                0b000 => return op_todo!("rlca"),
-                                0b001 => return op_todo!("rrca"),
-                                0b010 => return op_todo!("rla"),
-                                0b011 => return op_todo!("rra"),
-                                0b100 => return op_todo!("daa"),
-                                0b101 => return op_todo!("cpl"),
-                                0b110 => return op_todo!("scf"),
-                                0b111 => return op_todo!("ccf"),
+                                0b000 => return op!(rlca),
+                                0b001 => return op!(rrca),
+                                0b010 => return op!(rla),
+                                0b011 => return op!(rra),
+                                0b100 => return op!(daa),
+                                0b101 => return op!(cpl),
+                                0b110 => return op!(scf),
+                                0b111 => return op!(ccf),
                                 _ => unreachable!(),
                             },
                             0b000 => {
@@ -817,6 +817,49 @@ impl SM83 {
         }
     }
 
+    //shift
+
+    fn shift(&mut self, bus: &mut Bus, left: bool, carr: bool) {
+        if left {
+            // <<
+        } else {
+            // >>
+        }
+        todo!()
+    }
+
+    fn rlca(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+
+    fn rrca(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+
+    fn rla(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+
+    fn rra(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+
+    fn daa(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+    fn cpl(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+    fn scf(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+    fn ccf(&mut self, _bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
+        self.set_flag(Flag::Zero, false);
+        self.set_flag(Flag::HalfCarry, false);
+        let c = self.get_flag(Flag::Carry);
+        self.set_flag(Flag::Carry, !c);
+    }
+
     /*Arimetic 8bit */
 
     fn add8(&mut self, value: u8, carry: bool) {
@@ -837,14 +880,53 @@ impl SM83 {
         self.set_register(RegisterName::A, output as u16);
     }
 
-    fn add(&mut self, bus: &mut Bus, param: LoadArg, _0: LoadArg) {
-        let value = match param {
-            LoadArg::R8(r8) => self.get_r8(bus, r8),
-            LoadArg::Imm8 => self.imm8(bus),
-            _ => unreachable!(),
-        };
+    fn add16(&mut self, dst: u16, src: u16) -> u16 {
+        let output = dst.wrapping_add(src);
 
-        self.add8(value, false);
+        self.set_flag(Flag::Zero, output == 0);
+        self.set_flag(Flag::Substraction, false);
+        self.set_flag(
+            Flag::HalfCarry,
+            (src as u32 & 0xFFF) + (dst as u32 & 0xFFF) > 0xFFF,
+        );
+        self.set_flag(
+            Flag::Carry,
+            (src as u32 & 0xFFFF) + (dst as u32 & 0xFFFF) > 0xFFFF,
+        );
+        output
+    }
+
+    fn add(&mut self, bus: &mut Bus, dst: LoadArg, src: LoadArg) {
+        match (dst, src) {
+            (LoadArg::R8(R8::A), src) => {
+                let value = match src {
+                    LoadArg::R8(r8) => self.get_r8(bus, r8),
+                    LoadArg::Imm8 => self.imm8(bus),
+                    _ => unreachable!(),
+                };
+
+                self.add8(value, false);
+            }
+            (LoadArg::R16(R16::HL), LoadArg::R16(src)) => {
+                let dst_byte = self.get_register(RegisterName::HL);
+                let src_byte = self.get_register(src.into());
+                let result = self.add16(dst_byte, src_byte);
+                self.set_register(RegisterName::HL, result);
+            }
+            (LoadArg::R16(R16::SP), LoadArg::Imm8) => {
+                let imm8 = self.imm8(bus) as i8 as i16;
+                let src = self.sp;
+                self.sp = self.sp.wrapping_add_signed(imm8 as i16);
+
+                self.set_flags(
+                    false,
+                    false,
+                    (src as u16 & 0xF) + (imm8 as u16 & 0xF) > 0xF,
+                    (src as u16 & 0xFF) + (imm8 as u16 & 0xFF) > 0xFF,
+                );
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn adc(&mut self, bus: &mut Bus, param: LoadArg, _0: LoadArg) {
@@ -1055,11 +1137,11 @@ impl SM83 {
         self.pc = addr;
     }
 
-    fn ei(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
+    fn ei(&mut self, _bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
         self.ime = true
     }
 
-    fn di(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
+    fn di(&mut self, _bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
         self.ime = false
     }
 
