@@ -104,6 +104,7 @@ enum LoadArg {
     R16Mem(R16Mem),
     R16Stk(R16Stk),
     Condition(Condition), //condition
+    Bit3(u8),
     Imm8,
     Imm16,
     Nothing,
@@ -242,6 +243,9 @@ impl HighLow for u16 {
 impl From<&LoadArg> for &str {
     fn from(value: &LoadArg) -> Self {
         match value {
+            LoadArg::Bit3(_) => {
+                ""
+            }
             LoadArg::R8(r8) => match r8 {
                 R8::B => "B",
                 R8::C => "C",
@@ -607,9 +611,35 @@ impl SM83 {
         }
     }
 
+    fn get_prefix_instruction(opcode: u8) -> Instruction {
+        let bit_210 = opcode & 0b111;
+        let bit_543 = (opcode >> 3) & 0b111;
+        let bit_76 = (opcode >> 6);
+        let r8 = LoadArg::R8(bit_210.into());
+        let b3 = LoadArg::Bit3(bit_543);
+        match bit_76 {
+            0b00 => match bit_543 {
+                0b000 => op!(rlc, r8),
+                0b001 => op!(rrc, r8),
+                0b010 => op!(rl, r8),
+                0b011 => op!(rr, r8),
+                0b100 => op!(sla, r8),
+                0b101 => op!(sra, r8),
+                0b110 => op!(swap, r8),
+                0b111 => op!(srl, r8),
+                _ => unreachable!(),
+            },
+            0b01 => op!(bit, b3, r8),
+            0b10 => op!(res, b3, r8),
+            0b11 => op!(set, b3, r8),
+            _ => unreachable!(),
+        }
+    }
+
     fn build_table(&mut self) {
         for i in 0..256 {
             self.operation_table[i] = Self::get_instruction(i as u8);
+            self.operation_prefix_table[i] = Self::get_prefix_instruction(i as u8)
         }
     }
 
@@ -819,13 +849,34 @@ impl SM83 {
 
     //shift
 
-    fn shift(&mut self, bus: &mut Bus, left: bool, carr: bool) {
-        if left {
-            // <<
+    fn rotate(&mut self, left: bool, use_carry: bool, value : u8) -> u8 {
+        let leftmost = value & 0b10000000;
+        let rightmost = value & 0b1;
+
+        let moving_bit = if use_carry {
+            self.get_flag(Flag::Carry) as u8
         } else {
-            // >>
-        }
-        todo!()
+            if left {
+                leftmost
+            } else {
+                rightmost
+            }
+        };
+
+        let output = if left {
+            self.set_flag(Flag::Carry, leftmost != 0); 
+            (value << 1) | (moving_bit)
+        } else {
+            self.set_flag(Flag::Carry, rightmost != 0); 
+            (value >> 1) | (moving_bit << 7)
+        };
+
+        self.set_flag(Flag::Zero, output == 0);
+        self.set_flag(Flag::Substraction, false);
+        self.set_flag(Flag::HalfCarry, false);
+
+        //println!("rotate {left:?} {use_carry:?} value: {value:#b} output: {output:#b}");
+        output
     }
 
     fn rlca(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
@@ -833,11 +884,15 @@ impl SM83 {
     }
 
     fn rrca(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
-        todo!()
+        let a = self.get_register(RegisterName::A) as u8;
+        let a = self.rotate(false, false, a);
+        self.set_register(RegisterName::A, a as u16);
     }
 
     fn rla(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
-        todo!()
+        let a = self.get_register(RegisterName::A) as u8;
+        let a = self.rotate(true, true, a);
+        self.set_register(RegisterName::A, a as u16);
     }
 
     fn rra(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
@@ -851,8 +906,11 @@ impl SM83 {
         todo!()
     }
     fn scf(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
-        todo!()
+        self.set_flag(Flag::Zero, false);
+        self.set_flag(Flag::HalfCarry, false);
+        self.set_flag(Flag::Carry, true);
     }
+
     fn ccf(&mut self, _bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
         self.set_flag(Flag::Zero, false);
         self.set_flag(Flag::HalfCarry, false);
@@ -860,6 +918,96 @@ impl SM83 {
         self.set_flag(Flag::Carry, !c);
     }
 
+    /*Prefix Instruction */
+
+    fn rlc(&mut self, _bus : &mut Bus, register: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+
+    fn rrc(&mut self, _bus : &mut Bus, register: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+
+    fn rl(&mut self, bus : &mut Bus, register: LoadArg, _1: LoadArg) {
+        match register {
+            LoadArg::R8(r8) => {
+                let value = self.get_r8(bus, r8);
+                self.rotate(true, true, value);
+                self.set_r8(bus, r8, value);
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    fn rr(&mut self, _bus : &mut Bus, register: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+
+    fn sla(&mut self, _bus : &mut Bus, register: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+
+    fn sra(&mut self, _bus : &mut Bus, register: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+
+    fn swap(&mut self, _bus : &mut Bus, register: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+
+    fn srl(&mut self, _bus : &mut Bus, register: LoadArg, _1: LoadArg) {
+        todo!()
+    }
+
+    fn bit(&mut self, bus : &mut Bus, bits: LoadArg, register: LoadArg) {
+        let bits = match bits {
+            LoadArg::Bit3(value) => value,
+            _ => unreachable!()
+        };
+        
+        let value = match register {
+            LoadArg::R8(r8) => self.get_r8(bus, r8),
+            _ => unreachable!()
+        };
+
+        self.set_flag(Flag::Zero, (value & (1 << bits)) == 0);
+        self.set_flag(Flag::Substraction, false);
+        self.set_flag(Flag::HalfCarry, true);
+    }
+
+    fn set(&mut self, bus : &mut Bus, bits: LoadArg, register: LoadArg) {
+        let bits = match bits {
+            LoadArg::Bit3(value) => value,
+            _ => unreachable!()
+        };
+        
+
+        match register {
+            LoadArg::R8(r8) => {
+                let mut value = self.get_r8(bus, r8);
+                value = value | (1 << bits);
+                self.set_r8(bus, r8, value);
+            },
+            _ => unreachable!()
+        };
+    }
+
+    fn res(&mut self, bus : &mut Bus, bits: LoadArg, register: LoadArg) {
+        let bits = match bits {
+            LoadArg::Bit3(value) => value,
+            _ => unreachable!()
+        };
+        
+
+        match register {
+            LoadArg::R8(r8) => {
+                let mut value = self.get_r8(bus, r8);
+                value = value & !(1 << bits);
+                self.set_r8(bus, r8, value);
+            },
+            _ => unreachable!()
+        };
+    }
     /*Arimetic 8bit */
 
     fn add8(&mut self, value: u8, carry: bool) {
@@ -1169,6 +1317,9 @@ impl SM83 {
 
     fn debug_arg(&mut self, bus: &mut Bus, arg: LoadArg) -> String {
         match arg {
+            LoadArg::Bit3(bit3) => {
+                format!("{bit3}")
+            },
             LoadArg::R8(r8) => {
                 let value = self.get_r8(bus, r8);
                 format!("0x{value:02X}")
@@ -1228,7 +1379,13 @@ impl SM83 {
 
     pub fn step(&mut self, bus: &mut Bus) {
         let opcode = self.fetch(bus);
-        let op = self.operation_table[opcode as usize];
+        let op = if opcode != 0xCB {
+            self.operation_table[opcode as usize]
+        } else {
+            let opcode = self.fetch(bus);
+            self.operation_prefix_table[opcode as usize]
+        };
+        
         self.debug_op(bus, &op);
         (op.operation)(self, bus, op.arg1, op.arg2);
     }
