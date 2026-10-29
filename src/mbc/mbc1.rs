@@ -114,7 +114,7 @@ impl MemoryBankController for MBC1 {
                 let index = (addr - 0xA000) as usize;
                 self.ram[bank_index + index]
             }
-            _ => todo!("MBC1 read unimplemented"),
+            _ => unreachable!("read at addr {addr:#X}"),
         }
     }
 
@@ -151,6 +151,7 @@ impl MemoryBankController for MBC1 {
                     self.set_ram_bank(value);
                 }
             },
+            //modify banking mode
             0x6000..=0x7FFF => {
                 if addr & 0b1 == 1 {
                     self.banking_mode = BankingMode::Advanced;
@@ -158,7 +159,22 @@ impl MemoryBankController for MBC1 {
                     self.banking_mode = BankingMode::Simple;
                 }
             }
-            _ => unreachable!(),
+            //index into the ram bank
+            0xA000..=0xBFFF => {
+                if !self.ram_enable {
+                    return;
+                }
+
+                let bank_index = Self::RAM_BANK_SIZE
+                    * match self.banking_mode {
+                        BankingMode::Simple => 0,
+                        BankingMode::Advanced => self.get_ram_bank_number(),
+                    };
+
+                let index = (addr - 0xA000) as usize;
+                self.ram[bank_index + index] = value
+            }
+            _ => unreachable!("write in mbc1 at address: {addr:#X}"),
         }
     }
 }
