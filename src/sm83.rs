@@ -78,20 +78,20 @@ impl From<u8> for R8 {
 
 #[derive(Debug, Clone, Copy)]
 enum Condition {
-    Z = 0,
-    NZ = 1,
-    C = 2,
-    NC = 3,
+    NZ = 0,
+    Z = 1,
+    NC = 2,
+    C = 3,
     NoCondition,
 }
 
 impl From<u8> for Condition {
     fn from(value: u8) -> Self {
         match value & 0b11 {
-            0 => Condition::Z,
-            1 => Condition::NZ,
-            2 => Condition::C,
-            3 => Condition::NC,
+            0 => Condition::NZ,
+            1 => Condition::Z,
+            2 => Condition::NC,
+            3 => Condition::C,
             _ => unreachable!(),
         }
     }
