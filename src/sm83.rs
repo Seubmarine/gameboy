@@ -1267,7 +1267,7 @@ impl SM83 {
         if !can_call {
             return;
         }
-        self.stack_push16(bus, self.pc.wrapping_add(1));
+        self.stack_push16(bus, self.pc);
         self.pc = jump_addr;
     }
 
