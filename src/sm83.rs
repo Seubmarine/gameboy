@@ -806,6 +806,11 @@ impl SM83 {
             LoadArg::R16(register_r16) => self.set_register(register_r16.into(), src_byte),
             LoadArg::R16Mem(register_r16_mem) => {
                 let addr = self.get_register(register_r16_mem.into());
+                self.hl = match register_r16_mem {
+                    R16Mem::HLI => self.hl.wrapping_add(1),
+                    R16Mem::HLD => self.hl.wrapping_sub(1),
+                    _ => self.hl,
+                };
                 bus.write(addr, src_byte as u8);
             }
             LoadArg::Imm8 => unreachable!("dst can't be a Imm8"),
