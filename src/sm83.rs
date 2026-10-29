@@ -880,6 +880,29 @@ impl SM83 {
         output
     }
 
+    fn shift(&mut self, left: bool, arithmetic: bool, mut value: u8) -> u8 {
+        let rightmost = value & 0b1;
+        let leftmost = value & 0b10000000;
+        
+        if left {
+            value = value << 1;
+            if !arithmetic {
+                value = value | rightmost
+            }
+            self.set_flag(Flag::Carry, rightmost != 0);
+        } else {
+            value = value >> 1;
+            if !arithmetic {
+                value = value | leftmost
+            }
+            self.set_flag(Flag::Carry, leftmost != 0);
+        }
+        self.set_flag(Flag::Zero, value == 0);
+        self.set_flag(Flag::Substraction, false);
+        self.set_flag(Flag::HalfCarry, false);
+        value
+    }
+
     fn rlca(&mut self, bus: &mut Bus, _0: LoadArg, _1: LoadArg) {
         todo!()
     }
@@ -948,12 +971,26 @@ impl SM83 {
         todo!()
     }
 
-    fn sra(&mut self, _bus: &mut Bus, register: LoadArg, _1: LoadArg) {
-        todo!()
+    fn sra(&mut self, bus: &mut Bus, register: LoadArg, _1: LoadArg) {
+        match register {
+            LoadArg::R8(r8) => {
+                let value = self.get_r8(bus, r8);
+                let value = self.shift(false, true, value);
+                self.set_r8(bus, r8, value);
+            }
+            _ => unreachable!()
+        }
     }
 
-    fn swap(&mut self, _bus: &mut Bus, register: LoadArg, _1: LoadArg) {
-        todo!()
+    fn swap(&mut self, bus: &mut Bus, register: LoadArg, _1: LoadArg) {
+        match register {
+            LoadArg::R8(r8) => {
+                let value = self.get_r8(bus, r8);
+                let value = value >> 4 | value << 4;
+                self.set_r8(bus, r8, value);
+            }
+            _ => unreachable!()
+        }
     }
 
     fn srl(&mut self, _bus: &mut Bus, register: LoadArg, _1: LoadArg) {
