@@ -423,6 +423,7 @@ impl SM83 {
         match opcode {
             //block 0
             0b00000000 => op!(nop),
+            0b00001000 => op!(ld, LoadArg::Imm16, LoadArg::R16(R16::SP)),
             0b00011000 => op!(jr, LoadArg::Condition(NoCondition), LoadArg::Imm8),
             0b00010000 => op_todo!("stop"),
             //block 1
@@ -464,7 +465,6 @@ impl SM83 {
                             0b1010 => {
                                 return op!(ld, LoadArg::R8(R8::A), LoadArg::R16Mem(bit_54.into()));
                             }
-                            0b1000 => return op!(ld, LoadArg::Imm16, LoadArg::R16(R16::SP)),
                             0b0011 => return op!(inc, LoadArg::R16(bit_54.into())),
                             0b1011 => return op!(dec, LoadArg::R16(bit_54.into())),
                             0b1001 => {
