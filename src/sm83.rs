@@ -3,6 +3,8 @@
 // https://gbdev.io/gb-opcodes/optables/
 // https://gbdev.io/gb-opcodes/optables/octal
 
+use std::assert_matches;
+
 use crate::{gameboy::Bus, sm83::Condition::NoCondition};
 
 #[derive(Debug, Clone, Copy)]
@@ -468,7 +470,11 @@ impl SM83 {
                             0b0011 => return op!(inc, LoadArg::R16(bit_54.into())),
                             0b1011 => return op!(dec, LoadArg::R16(bit_54.into())),
                             0b1001 => {
-                                return op!(add, LoadArg::R16(R16::HL), LoadArg::R16(bit_54.into()));
+                                return op!(
+                                    add,
+                                    LoadArg::R16(R16::HL),
+                                    LoadArg::R16(bit_54.into())
+                                );
                             }
                             _ => (),
                         };
@@ -525,14 +531,14 @@ impl SM83 {
                         let operation_type = opcode >> 3 & 0b111;
                         let r = LoadArg::R8(opcode.into());
                         match operation_type {
-                            0b000 => op!(add, r, LoadArg::Nothing), //add r8
-                            0b001 => op!(adc, r, LoadArg::Nothing), //adc r8
-                            0b010 => op!(sub, r, LoadArg::Nothing), //sub r8
-                            0b011 => op!(sbc, r, LoadArg::Nothing), //sbc r8
-                            0b100 => op!(and, r, LoadArg::Nothing), //and r8
-                            0b101 => op!(xor, r, LoadArg::Nothing), //xor r8
-                            0b110 => op!(or, r, LoadArg::Nothing),  //or r8
-                            0b111 => op!(cp, r, LoadArg::Nothing),  //cp r8
+                            0b000 => op!(add, LoadArg::R8(R8::A), r), //add r8
+                            0b001 => op!(adc, LoadArg::R8(R8::A), r), //adc r8
+                            0b010 => op!(sub, LoadArg::R8(R8::A), r), //sub r8
+                            0b011 => op!(sbc, LoadArg::R8(R8::A), r), //sbc r8
+                            0b100 => op!(and, LoadArg::R8(R8::A), r), //and r8
+                            0b101 => op!(xor, LoadArg::R8(R8::A), r), //xor r8
+                            0b110 => op!(or, LoadArg::R8(R8::A), r),  //or r8
+                            0b111 => op!(cp, LoadArg::R8(R8::A), r),  //cp r8
                             _ => unreachable!("operation_type is three bit"),
                         }
                     }
@@ -544,14 +550,14 @@ impl SM83 {
                             let arithmetic_type = opcode >> 3 & 0b111;
                             //arithetic imm8
                             return match arithmetic_type {
-                                0b000 => op!(add, LoadArg::Imm8), //add imm8
-                                0b001 => op!(adc, LoadArg::Imm8), //adc imm8
-                                0b010 => op!(sub, LoadArg::Imm8), //sub imm8
-                                0b011 => op!(sbc, LoadArg::Imm8), //sbc imm8
-                                0b100 => op!(and, LoadArg::Imm8), //and imm8
-                                0b101 => op!(xor, LoadArg::Imm8), //xor imm8
-                                0b110 => op!(or, LoadArg::Imm8),  //or imm8
-                                0b111 => op!(cp, LoadArg::Imm8),  //cp imm8
+                                0b000 => op!(add, LoadArg::R8(R8::A), LoadArg::Imm8), //add imm8
+                                0b001 => op!(adc, LoadArg::R8(R8::A), LoadArg::Imm8), //adc imm8
+                                0b010 => op!(sub, LoadArg::R8(R8::A), LoadArg::Imm8), //sub imm8
+                                0b011 => op!(sbc, LoadArg::R8(R8::A), LoadArg::Imm8), //sbc imm8
+                                0b100 => op!(and, LoadArg::R8(R8::A), LoadArg::Imm8), //and imm8
+                                0b101 => op!(xor, LoadArg::R8(R8::A), LoadArg::Imm8), //xor imm8
+                                0b110 => op!(or, LoadArg::R8(R8::A), LoadArg::Imm8),  //or imm8
+                                0b111 => op!(cp, LoadArg::R8(R8::A), LoadArg::Imm8),  //cp imm8
                                 _ => unreachable!("arithmetic_type is only 3bit"),
                             };
                         }
@@ -883,7 +889,7 @@ impl SM83 {
     fn shift(&mut self, left: bool, arithmetic: bool, mut value: u8) -> u8 {
         let rightmost = value & 0b1;
         let leftmost = value & 0b10000000;
-        
+
         if left {
             value = value << 1;
             if !arithmetic {
@@ -978,7 +984,7 @@ impl SM83 {
                 let value = self.shift(false, true, value);
                 self.set_r8(bus, r8, value);
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -989,7 +995,7 @@ impl SM83 {
                 let value = value >> 4 | value << 4;
                 self.set_r8(bus, r8, value);
             }
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -1113,7 +1119,8 @@ impl SM83 {
         }
     }
 
-    fn adc(&mut self, bus: &mut Bus, param: LoadArg, _0: LoadArg) {
+    fn adc(&mut self, bus: &mut Bus, a: LoadArg, param: LoadArg) {
+        assert_matches!(a, LoadArg::R8(R8::A));
         let value = match param {
             LoadArg::R8(r8) => self.get_r8(bus, r8),
             LoadArg::Imm8 => self.imm8(bus),
@@ -1137,7 +1144,8 @@ impl SM83 {
         self.set_register(RegisterName::A, output as u16);
     }
 
-    fn sub(&mut self, bus: &mut Bus, param: LoadArg, _0: LoadArg) {
+    fn sub(&mut self, bus: &mut Bus, a: LoadArg, param: LoadArg) {
+        assert_matches!(a, LoadArg::R8(R8::A));
         let value = match param {
             LoadArg::R8(r8) => self.get_r8(bus, r8),
             LoadArg::Imm8 => self.imm8(bus),
@@ -1146,7 +1154,9 @@ impl SM83 {
         self.sub8(value, false);
     }
 
-    fn sbc(&mut self, bus: &mut Bus, param: LoadArg, _0: LoadArg) {
+    fn sbc(&mut self, bus: &mut Bus, a: LoadArg, param: LoadArg) {
+        assert_matches!(a, LoadArg::R8(R8::A));
+
         let value = match param {
             LoadArg::R8(r8) => self.get_r8(bus, r8),
             LoadArg::Imm8 => self.imm8(bus),
@@ -1156,7 +1166,9 @@ impl SM83 {
         self.sub8(value, carry);
     }
 
-    fn and(&mut self, bus: &mut Bus, param: LoadArg, _0: LoadArg) {
+    fn and(&mut self, bus: &mut Bus, a: LoadArg, param: LoadArg) {
+        assert_matches!(a, LoadArg::R8(R8::A));
+
         let value = match param {
             LoadArg::R8(r8) => self.get_r8(bus, r8) as u16,
             LoadArg::Imm8 => self.imm8(bus) as u16,
@@ -1168,7 +1180,9 @@ impl SM83 {
         self.set_flags(a == 0, false, true, false);
     }
 
-    fn xor(&mut self, bus: &mut Bus, param: LoadArg, _0: LoadArg) {
+    fn xor(&mut self, bus: &mut Bus, a: LoadArg, param: LoadArg) {
+        assert_matches!(a, LoadArg::R8(R8::A));
+
         let value = match param {
             LoadArg::R8(r8) => self.get_r8(bus, r8) as u16,
             LoadArg::Imm8 => self.imm8(bus) as u16,
@@ -1181,7 +1195,8 @@ impl SM83 {
         self.set_flags(a == 0, false, false, false);
     }
 
-    fn or(&mut self, bus: &mut Bus, param: LoadArg, _0: LoadArg) {
+    fn or(&mut self, bus: &mut Bus, a: LoadArg, param: LoadArg) {
+        assert_matches!(a, LoadArg::R8(R8::A));
         let value = match param {
             LoadArg::R8(r8) => self.get_r8(bus, r8) as u16,
             LoadArg::Imm8 => self.imm8(bus) as u16,
@@ -1194,7 +1209,8 @@ impl SM83 {
         self.set_flags(a == 0, false, false, false);
     }
 
-    fn cp(&mut self, bus: &mut Bus, param: LoadArg, _0: LoadArg) {
+    fn cp(&mut self, bus: &mut Bus, a: LoadArg, param: LoadArg) {
+        assert_matches!(a, LoadArg::R8(R8::A));
         let value = match param {
             LoadArg::R8(r8) => self.get_r8(bus, r8),
             LoadArg::Imm8 => self.imm8(bus),
