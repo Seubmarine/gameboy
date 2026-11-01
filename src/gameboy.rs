@@ -59,8 +59,8 @@ impl Bus {
 }
 
 pub struct GameBoy {
-    cpu: SM83,
-    bus: Bus,
+    pub cpu: SM83,
+    pub bus: Bus,
 }
 
 impl GameBoy {
@@ -72,7 +72,16 @@ impl GameBoy {
         }
     }
 
-    fn step(&mut self) {
+    //desactivate screen and serial control for mooneye test
+    #[cfg(test)]
+    pub fn test_mode_mooneye(&mut self) {
+        //desactivate serial control
+        self.bus.hardware_registers.sc = 0xFF;
+        //desactivate screen
+        self.bus.hardware_registers.ly = 0xFF;
+    }
+
+    pub fn step(&mut self) {
         self.cpu.step(&mut self.bus);
     }
 

@@ -182,6 +182,10 @@ impl MemoryBankController for MBC1 {
 #[cfg(test)]
 mod tests {
 
+    use crate::{cartridge::Cartridge, gameboy::GameBoy};
+    use std::fs::File;
+    use std::io::Read;
+
     // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
 
@@ -297,5 +301,39 @@ mod tests {
                 "bank 0x00, 0x20, 0x40, 0x60 are accessible in region 0x0000 - 0x3FFF in advanced mode"
             )
         }
+    }
+
+    fn gameboy_load(path: &str) -> GameBoy {
+        let mut file = File::open(path).unwrap();
+        let mut rom = Vec::new();
+        file.read_to_end(&mut rom).unwrap();
+        let c = Cartridge::load(&rom).unwrap();
+        let mut g = GameBoy::load(&c);
+        g.test_mode_mooneye();
+        g
+    }
+
+    const MAX_STEPS: usize = 10000000;
+    fn gameboy_run_test(path: &str) {
+        let mut gb = gameboy_load(path);
+        for _ in 0..MAX_STEPS {
+            gb.step();
+            match crate::sm83::tests::test_check_mooneye(&mut gb.cpu, &mut gb.bus) {
+                Some(true) => return,
+                Some(false) => panic!("ROM reported failure at pc={:#06x}", gb.cpu.pc),
+                None => (),
+            }
+        }
+        panic!("timeout, last pc={:#06x}", gb.cpu.pc);
+    }
+
+    #[test]
+    fn test_rom_512kb() {
+        let g = gameboy_run_test("tests/test-roms/mooneye/mbc1/rom_512kb.gb");
+    }
+
+    #[test]
+    fn test_ram_64kb() {
+        let g = gameboy_run_test("tests/test-roms/mooneye/mbc1/ram_64kb.gb");
     }
 }

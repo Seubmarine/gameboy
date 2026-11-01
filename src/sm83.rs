@@ -368,9 +368,9 @@ macro_rules! op_todo {
 
 #[derive(Debug)]
 pub struct SM83 {
-    pc: u16, //program counter
-    sp: u16, //stack pointer
-    af: u16, //accumalator and flags
+    pub pc: u16, //program counter
+    sp: u16,     //stack pointer
+    af: u16,     //accumalator and flags
 
     bc: u16,
     de: u16,
@@ -1389,21 +1389,21 @@ impl SM83 {
         }
     }
 
-    fn debug_op(&mut self, bus: &mut Bus, ins: &Instruction) {
+    fn debug_op(&mut self, bus: &mut Bus, opcode: u8, ins: &Instruction) {
         let pc = self.pc.wrapping_sub(1);
         let name = ins.name;
         match (ins.arg1, ins.arg2) {
             (Arg::Nothing, Arg::Nothing) => {
-                println!("0x{pc:04X}: {name}")
+                println!("{pc:#04X}[{opcode:#02X}]: {name}")
             }
             (arg1, Arg::Nothing) => {
                 let v1 = self.debug_arg(bus, arg1);
-                println!("0x{pc:04X}: {name} {arg1}[{v1}]")
+                println!("0x{pc:04X}[0x{opcode:02X}]: {name} {arg1}[{v1}]")
             }
             (arg1, arg2) => {
                 let v1 = self.debug_arg(bus, arg1);
                 let v2 = self.debug_arg(bus, arg2);
-                println!("0x{pc:04X}: {name} {arg1}[{v1}] {arg2}[{v2}]")
+                println!("0x{pc:04X}[0x{opcode:02X}]: {name} {arg1}[{v1}] {arg2}[{v2}]")
             }
         }
     }
@@ -1416,16 +1416,13 @@ impl SM83 {
             let opcode = self.fetch(bus);
             self.operation_prefix_table[opcode as usize]
         };
-
-        self.debug_op(bus, &op);
+        self.debug_op(bus, opcode, &op);
         (op.operation)(self, bus, op.arg1, op.arg2);
     }
 }
 
 #[cfg(test)]
-mod tests {
-
-    use crate::mbc::{mbc1::MBC1, rom_only::RomOnly};
+pub mod tests {
 
     // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
@@ -1453,5 +1450,27 @@ mod tests {
         assert!(cpu.get_flag(Flag::Substraction) == true);
         assert!(cpu.get_flag(Flag::HalfCarry) == false);
         assert!(cpu.get_flag(Flag::Carry) == true);
+    }
+
+    pub fn test_check_mooneye(cpu: &mut SM83, bus: &mut Bus) -> Option<bool> {
+        let opcode = bus.read(cpu.pc);
+        //Found mooneye test suite breakpoint
+        //LD B, B is considered as a breakpoint for a mooneye test
+        if opcode == 0x40 {
+            let b = cpu.get_register(RegisterName::B);
+            let c = cpu.get_register(RegisterName::C);
+            let d = cpu.get_register(RegisterName::D);
+            let e = cpu.get_register(RegisterName::E);
+            let h = cpu.get_register(RegisterName::H);
+            let l = cpu.get_register(RegisterName::L);
+            //
+            if b == 3 && c == 5 && d == 8 && e == 13 && h == 21 && l == 34 {
+                Some(true)
+            } else {
+                Some(false)
+            }
+        } else {
+            None
+        }
     }
 }
