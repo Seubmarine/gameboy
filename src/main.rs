@@ -5,6 +5,7 @@ mod cartridge;
 mod gameboy;
 mod mbc;
 mod sm83;
+mod ppu;
 
 fn main() {
     let path = args()
@@ -23,5 +24,17 @@ fn main() {
     println!("{c}");
 
     let mut gb = GameBoy::load(&c);
-    gb.run();
+    gb.run_n_cycles(2400000);
+    let vram = gb.get_vram();
+    println!("{vram:?}");
+    for i in 0..384 {
+        if i == 78 {
+            println!("SHOULD BE N");
+        }
+        let tile = gb.get_tile(i);
+        println!("{tile}\n");
+    }
+    let (tmap1, tmap2) = gb.get_tilemaps();
+    println!("TILEMAP1:\n{tmap1}\n\n\n\n");
+    println!("TILEMAP2:\n{tmap2}\n\n\n\n");
 }

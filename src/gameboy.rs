@@ -1,4 +1,4 @@
-use crate::{cartridge::Cartridge, mbc::mbc_trait::MemoryBankController, sm83::SM83};
+use crate::{cartridge::Cartridge, mbc::mbc_trait::MemoryBankController, ppu::{Ppu, Tile, Tilemap}, sm83::SM83};
 
 pub struct Bus {
     vram: [u8; 0x2000],
@@ -72,6 +72,18 @@ impl GameBoy {
         }
     }
 
+    pub fn get_vram(&self) -> &[u8; 8192] {
+        &self.bus.vram
+    }
+
+    pub fn get_tile(&self, index : usize) -> Tile {
+        Ppu::get_tile(&self.bus.vram, index)
+    }
+
+    pub fn get_tilemaps(&self) -> (Tilemap, Tilemap) {
+        Ppu::get_tilemaps(&self.bus.vram)
+    }
+
     //desactivate screen and serial control for mooneye test
     #[cfg(test)]
     pub fn test_mode_mooneye(&mut self) {
@@ -87,6 +99,12 @@ impl GameBoy {
 
     pub fn run(&mut self) {
         loop {
+            self.step();
+        }
+    }
+
+    pub fn run_n_cycles(&mut self, cycles: usize) {
+        for _ in 0..cycles {
             self.step();
         }
     }
