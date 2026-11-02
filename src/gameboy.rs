@@ -92,6 +92,7 @@ impl GameBoy {
     }
 }
 
+#[allow(dead_code)]
 enum HardwareRegisterName {
     P1,      //0xFF00
     SB,      //0xFF01

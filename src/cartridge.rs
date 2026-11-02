@@ -55,6 +55,7 @@ impl TryFrom<u8> for CartridgeType {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum CartridgeWarning {
     InvalidTitle,
@@ -83,7 +84,7 @@ impl Display for Cartridge<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Game: {}\nCartridge Type: {:?}\nDestination: {:?}\nRom Size: {}Kib, Rom bank count: {}\nRam Size: {}Kib, Ram bank count: {}",
+            "Game: {}\nCartridge Type: {:?}\nDestination: {:?}\nRom Size: {}Kib, Rom bank count: {}\nRam Size: {}Kib, Ram bank count: {}, Licence code: {}",
             self.title,
             self.cartridge_type,
             self.destination_code,
@@ -91,16 +92,19 @@ impl Display for Cartridge<'_> {
             self.rom_bank_count,
             (self.ram_size / 1024),
             self.ram_bank_count,
+            self.licencee_code,
         )
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum CartridgeError {
     InvalidCartridgeType(u8),
     BadHeaderChecksum { expected: u8, computed: u8 },
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct CartridgeErrors {
     errors: Vec<CartridgeError>,

@@ -194,22 +194,6 @@ impl From<u8> for R16Mem {
     }
 }
 
-enum RegisterCond {
-    NZ = 0,
-    Z = 1,
-    NC = 2,
-    C = 3,
-}
-
-enum Register {
-    R8(R8),
-    R16(R16),
-    R16Mem(R16Mem),
-    R16Stk(R16Stk),
-    Immediate16,
-    Immediate8,
-}
-
 #[derive(Debug, Clone, Copy)]
 enum Flag {
     Zero = 7,
@@ -588,7 +572,7 @@ impl SM83 {
     fn get_prefix_instruction(opcode: u8) -> Instruction {
         let bit_210 = opcode & 0b111;
         let bit_543 = (opcode >> 3) & 0b111;
-        let bit_76 = (opcode >> 6);
+        let bit_76 = opcode >> 6;
         let r8 = Arg::R8(bit_210.into());
         let b3 = Arg::Bit3(bit_543);
         match bit_76 {
@@ -877,33 +861,33 @@ impl SM83 {
         value
     }
 
-    fn rlca(&mut self, bus: &mut Bus, _0: Arg, _1: Arg) {
+    fn rlca(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
         todo!()
     }
 
-    fn rrca(&mut self, bus: &mut Bus, _0: Arg, _1: Arg) {
+    fn rrca(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
         let a = self.get_register(RegisterName::A) as u8;
         let a = self.rotate(false, false, a);
         self.set_register(RegisterName::A, a as u16);
     }
 
-    fn rla(&mut self, bus: &mut Bus, _0: Arg, _1: Arg) {
+    fn rla(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
         let a = self.get_register(RegisterName::A) as u8;
         let a = self.rotate(true, true, a);
         self.set_register(RegisterName::A, a as u16);
     }
 
-    fn rra(&mut self, bus: &mut Bus, _0: Arg, _1: Arg) {
+    fn rra(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
         todo!()
     }
 
-    fn daa(&mut self, bus: &mut Bus, _0: Arg, _1: Arg) {
+    fn daa(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
         todo!()
     }
-    fn cpl(&mut self, bus: &mut Bus, _0: Arg, _1: Arg) {
+    fn cpl(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
         todo!()
     }
-    fn scf(&mut self, bus: &mut Bus, _0: Arg, _1: Arg) {
+    fn scf(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
         self.set_flag(Flag::Zero, false);
         self.set_flag(Flag::HalfCarry, false);
         self.set_flag(Flag::Carry, true);
@@ -918,11 +902,11 @@ impl SM83 {
 
     /*Prefix Instruction */
 
-    fn rlc(&mut self, _bus: &mut Bus, register: Arg, _1: Arg) {
+    fn rlc(&mut self, _bus: &mut Bus, _register: Arg, _1: Arg) {
         todo!()
     }
 
-    fn rrc(&mut self, _bus: &mut Bus, register: Arg, _1: Arg) {
+    fn rrc(&mut self, _bus: &mut Bus, _register: Arg, _1: Arg) {
         todo!()
     }
 
@@ -937,11 +921,11 @@ impl SM83 {
         }
     }
 
-    fn rr(&mut self, _bus: &mut Bus, register: Arg, _1: Arg) {
+    fn rr(&mut self, _bus: &mut Bus, _register: Arg, _1: Arg) {
         todo!()
     }
 
-    fn sla(&mut self, _bus: &mut Bus, register: Arg, _1: Arg) {
+    fn sla(&mut self, _bus: &mut Bus, _register: Arg, _1: Arg) {
         todo!()
     }
 
@@ -967,7 +951,7 @@ impl SM83 {
         }
     }
 
-    fn srl(&mut self, _bus: &mut Bus, register: Arg, _1: Arg) {
+    fn srl(&mut self, _bus: &mut Bus, _register: Arg, _1: Arg) {
         todo!()
     }
 

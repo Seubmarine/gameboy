@@ -1,4 +1,4 @@
-use crate::mbc::mbc_trait::{self, MemoryBankController};
+use crate::mbc::mbc_trait::MemoryBankController;
 //DOC: https://gbdev.io/pandocs/nombc.html
 pub struct RomOnly {
     rom: Vec<u8>,

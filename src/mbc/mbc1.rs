@@ -78,8 +78,6 @@ impl MBC1 {
         }
         rom_bank_current & mask
     }
-
-    fn rom_bank_mask() {}
 }
 
 impl MemoryBankController for MBC1 {
@@ -112,7 +110,7 @@ impl MemoryBankController for MBC1 {
                     };
 
                 let index = (addr - 0xA000) as usize;
-                self.ram[bank_index + index]
+                self.ram[(bank_index + index) % self.ram_size]
             }
             _ => unreachable!("read at addr {addr:#X}"),
         }
@@ -329,11 +327,11 @@ mod tests {
 
     #[test]
     fn test_rom_512kb() {
-        let g = gameboy_run_test("tests/test-roms/mooneye/mbc1/rom_512kb.gb");
+        gameboy_run_test("tests/test-roms/mooneye/mbc1/rom_512kb.gb");
     }
 
     #[test]
     fn test_ram_64kb() {
-        let g = gameboy_run_test("tests/test-roms/mooneye/mbc1/ram_64kb.gb");
+        gameboy_run_test("tests/test-roms/mooneye/mbc1/ram_64kb.gb");
     }
 }
