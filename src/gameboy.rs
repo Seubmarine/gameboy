@@ -1,4 +1,6 @@
-use crate::{cartridge::Cartridge, mbc::mbc_trait::MemoryBankController, ppu::{Ppu, Tile, Tilemap}, sm83::SM83};
+use crate::{
+    cartridge::Cartridge, mbc::mbc_trait::MemoryBankController, ppu::{self, Ppu, Tile, Tilemap}, sm83::SM83,
+};
 
 pub struct Bus {
     vram: [u8; 0x2000],
@@ -7,6 +9,8 @@ pub struct Bus {
     mbc: Box<dyn MemoryBankController>,
     hardware_registers: HardwareRegisters,
     hram: [u8; 127],
+    ppu: Ppu,
+    interupt_enable: u8,
 }
 
 impl Bus {
@@ -18,11 +22,24 @@ impl Bus {
             mbc,
             hardware_registers: Default::default(),
             hram: [0; 127],
+            ppu: Ppu::new(),
+            interupt_enable: 0,
         }
     }
 
-    pub fn read(&mut self, addr: u16) -> u8 {
-        // println!("read addr: 0x{addr:X}");
+    pub fn dma_cycle_m(&mut self) {
+        let copy_info = self.ppu.dma.cycle_m();
+        if let Some((address, index)) = copy_info {
+            self.ppu.oam[index] = self.peek(address);
+        }
+    }
+
+    pub fn cycle_m(&mut self) {
+        self.ppu.cycle_m();
+        self.dma_cycle_m();
+    }
+
+    pub fn peek(&mut self, addr: u16) -> u8 {
         match addr {
             0x0000..=0x3FFF => self.mbc.read(addr),
             0x4000..=0x7FFF => self.mbc.read(addr),
@@ -30,17 +47,41 @@ impl Bus {
             0xA000..=0xBFFF => self.mbc.read(addr),
             0xC000..=0xCFFF => self.wram[0][(addr - 0xC000) as usize],
             0xD000..=0xDFFF => self.wram[self.wram_bank_current][(addr - 0xD000) as usize], //todo!("cgb: WRAM bank 1-7 (switchable)"),
-            0xE000..=0xFDFF => self.read(addr - 0x2000), //todo!("echo ram (mirror 0xC000-0xDDFF)"),
+            0xE000..=0xFDFF => self.peek(addr - 0x2000), //todo!("echo ram (mirror 0xC000-0xDDFF)"),
             0xFE00..=0xFE9F => todo!("object attribute memory (oam)"),
             0xFEA0..=0xFEFF => todo!("not usable (prohibited)"),
-            0xFF00..=0xFF7F => self.hardware_registers.read_hardware_register(addr),
+            0xFF00..=0xFF3F => self.hardware_registers.read_hardware_register(addr),
+            0xFF40..=0xFF55 => self.ppu.read_reg(addr),
+            0xFF56..=0xFF7F => self.hardware_registers.read_hardware_register(addr),
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
-            0xFFFF..=0xFFFF => self.hardware_registers.read_hardware_register(addr),
+            0xFFFF => self.interupt_enable,
+        }
+    }
+
+    pub fn read(&mut self, addr: u16) -> u8 {
+        // println!("read addr: 0x{addr:X}");
+        self.cycle_m();
+        match addr {
+            0x0000..=0x3FFF => self.mbc.read(addr),
+            0x4000..=0x7FFF => self.mbc.read(addr),
+            0x8000..=0x9FFF => self.vram[(addr - 0x8000) as usize],
+            0xA000..=0xBFFF => self.mbc.read(addr),
+            0xC000..=0xCFFF => self.wram[0][(addr - 0xC000) as usize],
+            0xD000..=0xDFFF => self.wram[self.wram_bank_current][(addr - 0xD000) as usize], //todo!("cgb: WRAM bank 1-7 (switchable)"),
+            0xE000..=0xFDFF => self.peek(addr - 0x2000), //todo!("echo ram (mirror 0xC000-0xDDFF)"),
+            0xFE00..=0xFE9F => todo!("object attribute memory (oam)"),
+            0xFEA0..=0xFEFF => todo!("not usable (prohibited)"),
+            0xFF00..=0xFF3F => self.hardware_registers.read_hardware_register(addr),
+            0xFF40..=0xFF55 => self.ppu.read_reg(addr),
+            0xFF56..=0xFF7F => self.hardware_registers.read_hardware_register(addr),
+            0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
+            0xFFFF => self.interupt_enable,
         }
     }
 
     pub fn write(&mut self, addr: u16, value: u8) {
         // println!("write addr: 0x{addr:X} value: {value} 0x{value:x}");
+        self.cycle_m();
         match addr {
             0x0000..=0x3FFF => self.mbc.write(addr, value),
             0x4000..=0x7FFF => self.mbc.write(addr, value),
@@ -51,9 +92,12 @@ impl Bus {
             0xE000..=0xFDFF => self.write(addr - 0x2000, value),
             0xFE00..=0xFE9F => todo!("object attribute memory (oam)"),
             0xFEA0..=0xFEFF => todo!("not usable (prohibited)"),
-            0xFF00..=0xFF7F => self.hardware_registers.write_hardware_register(addr, value),
+            0xFF00..=0xFF3F => self.hardware_registers.write_hardware_register(addr, value),
+            0xFF40..=0xFF55 => self.ppu.write_reg(addr, value),
+            0xFF56..=0xFF7F => self.hardware_registers.write_hardware_register(addr, value),
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = value,
-            0xFFFF..=0xFFFF => self.hardware_registers.write_hardware_register(addr, value),
+            0xFFFF => self.interupt_enable = value,
+            _ => (),
         };
     }
 }
@@ -76,7 +120,7 @@ impl GameBoy {
         &self.bus.vram
     }
 
-    pub fn get_tile(&self, index : usize) -> Tile {
+    pub fn get_tile(&self, index: usize) -> Tile {
         Ppu::get_tile(&self.bus.vram, index)
     }
 
