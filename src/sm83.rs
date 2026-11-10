@@ -1314,7 +1314,7 @@ impl SM83 {
     }
 
     fn reti(&mut self, bus: &mut Bus, _0: Arg, _1: Arg) {
-        self.ei(bus, Arg::Nothing, Arg::Nothing);
+        self.ime = true;
         self.ret(bus, Arg::Condition(Condition::Always), Arg::Nothing);
     }
 
@@ -1340,7 +1340,7 @@ impl SM83 {
         self.ime = false;
         bus.cycle_m(); //nop
         bus.cycle_m(); //nop
-        self.stack_push16(bus, self.sp);
+        self.stack_push16(bus, self.pc);
         self.pc = interrupt.handler_address();
         bus.cycle_m();
     }
