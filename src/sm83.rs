@@ -929,8 +929,15 @@ impl SM83 {
         todo!()
     }
 
-    fn sla(&mut self, _bus: &mut Bus, _register: Arg, _1: Arg) {
-        todo!()
+    fn sla(&mut self, bus: &mut Bus, register: Arg, _1: Arg) {
+        match register {
+            Arg::R8(r8) => {
+                let value = self.get_r8(bus, r8);
+                let value = self.shift(true, true, value);
+                self.set_r8(bus, r8, value);
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn sra(&mut self, bus: &mut Bus, register: Arg, _1: Arg) {
