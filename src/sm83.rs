@@ -1336,6 +1336,7 @@ impl SM83 {
     }
 
     fn trigger_interrupt(&mut self, bus: &mut Bus, interrupt: Interrupt) {
+        println!("Interrupt triggered by: {interrupt:?}");
         self.ime = false;
         bus.cycle_m(); //nop
         bus.cycle_m(); //nop
@@ -1413,6 +1414,7 @@ impl SM83 {
                 let mask = 1 << i;
                 let flag = pending & mask;
                 if let Ok(interrupt) = <u8 as TryInto<Interrupt>>::try_into(flag) {
+                    bus.clear_interrupt(interrupt);
                     self.trigger_interrupt(bus, interrupt);
                     return true;
                 }

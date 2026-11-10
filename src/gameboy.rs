@@ -42,7 +42,7 @@ impl Bus {
 
     pub fn interrupt_pending(&self) -> u8 {
         const INTERRUPT_MASK: u8 = 0b11111;
-        self.interrupt_enable & self.interrupt_enable & INTERRUPT_MASK
+        self.interrupt_flag & self.interrupt_enable & INTERRUPT_MASK
     }
 
     pub fn dma_cycle_m(&mut self) {
@@ -123,6 +123,7 @@ impl Bus {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub enum Interrupt {
     Vblank,
     Stat,
@@ -130,6 +131,7 @@ pub enum Interrupt {
     Serial,
     Joypad,
 }
+
 impl Interrupt {
     pub fn flag(&self) -> u8 {
         match self {
