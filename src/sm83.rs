@@ -764,7 +764,7 @@ impl SM83 {
         };
 
         match dst {
-            Arg::R8(register_r8) => self.set_register(register_r8.into(), src_byte),
+            Arg::R8(register_r8) => self.set_r8(bus, register_r8, (src_byte & 0xFF) as u8),
             Arg::R16(register_r16) => self.set_register(register_r16.into(), src_byte),
             Arg::R16Mem(register_r16_mem) => {
                 let addr = self.get_register(register_r16_mem.into());
