@@ -4,8 +4,8 @@ use crate::{cartridge::Cartridge, gameboy::GameBoy};
 mod cartridge;
 mod gameboy;
 mod mbc;
-mod sm83;
 mod ppu;
+mod sm83;
 
 fn main() {
     let path = args()

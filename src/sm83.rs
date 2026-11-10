@@ -5,7 +5,7 @@
 
 use std::assert_matches;
 
-use crate::gameboy::Bus;
+use crate::gameboy::{Bus, Interrupt};
 
 #[derive(Debug, Clone, Copy)]
 enum RegisterName {
@@ -359,8 +359,10 @@ pub struct SM83 {
     bc: u16,
     de: u16,
 
-    hl: u16,   //HL Register
+    hl: u16, //HL Register
+    ime_pending: bool,
     ime: bool, //interrupt master enable
+    is_halted: bool,
 
     operation_table: [Instruction; 256],
     operation_prefix_table: [Instruction; 256],
@@ -387,8 +389,10 @@ impl SM83 {
             bc: 0,
             de: 0,
 
-            hl: 0,      //HL Register
+            hl: 0, //HL Register
+            ime_pending: false,
             ime: false, //interrupt master enable
+            is_halted: false,
 
             operation_table: [Instruction::default(); 256],
             operation_prefix_table: [Instruction::default(); 256],
@@ -738,7 +742,7 @@ impl SM83 {
     }
 
     fn halt(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
-        todo!("halt")
+        self.is_halted = true;
     }
 
     fn ld(&mut self, bus: &mut Bus, dst: Arg, src: Arg) {
@@ -1301,10 +1305,11 @@ impl SM83 {
     }
 
     fn ei(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
-        self.ime = true
+        self.ime_pending = true
     }
 
     fn di(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
+        self.ime_pending = false;
         self.ime = false
     }
 
@@ -1328,6 +1333,15 @@ impl SM83 {
         let byte = bus.read(self.pc);
         self.pc = self.pc.wrapping_add(1);
         byte
+    }
+
+    fn trigger_interrupt(&mut self, bus: &mut Bus, interrupt: Interrupt) {
+        self.ime = false;
+        bus.cycle_m(); //nop
+        bus.cycle_m(); //nop
+        self.stack_push16(bus, self.sp);
+        self.pc = interrupt.handler_address();
+        bus.cycle_m();
     }
 
     fn debug_arg(&mut self, bus: &mut Bus, arg: Arg) -> String {
@@ -1378,21 +1392,52 @@ impl SM83 {
         let name = ins.name;
         match (ins.arg1, ins.arg2) {
             (Arg::Nothing, Arg::Nothing) => {
-                println!("{pc:#04X}[{opcode:#02X}]: {name}")
+                println!("{pc:#06X}[{opcode:#04X}]: {name}")
             }
             (arg1, Arg::Nothing) => {
                 let v1 = self.debug_arg(bus, arg1);
-                println!("0x{pc:04X}[0x{opcode:02X}]: {name} {arg1}[{v1}]")
+                println!("{pc:#06X}[{opcode:#04X}]: {name} {arg1}[{v1}]")
             }
             (arg1, arg2) => {
                 let v1 = self.debug_arg(bus, arg1);
                 let v2 = self.debug_arg(bus, arg2);
-                println!("0x{pc:04X}[0x{opcode:02X}]: {name} {arg1}[{v1}] {arg2}[{v2}]")
+                println!("{pc:#06X}[{opcode:#04X}]: {name} {arg1}[{v1}] {arg2}[{v2}]")
             }
         }
     }
 
+    fn handle_interrupt(&mut self, bus: &mut Bus) -> bool {
+        let pending = bus.interrupt_pending();
+        if pending != 0 && self.ime {
+            for i in 0..5 {
+                let mask = 1 << i;
+                let flag = pending & mask;
+                if let Ok(interrupt) = <u8 as TryInto<Interrupt>>::try_into(flag) {
+                    self.trigger_interrupt(bus, interrupt);
+                    return true;
+                }
+            }
+            unreachable!("pending interrupt, but all interrupt checked");
+        }
+        false
+    }
+
     pub fn step(&mut self, bus: &mut Bus) {
+        if self.is_halted {
+            bus.cycle_m();
+            if bus.interrupt_pending() != 0 {
+                self.is_halted = false;
+            }
+            return;
+        }
+        if self.handle_interrupt(bus) {
+            return;
+        }
+        if self.ime_pending {
+            self.ime_pending = false;
+            self.ime = true;
+        }
+
         let opcode = self.fetch(bus);
         let op = if opcode != 0xCB {
             self.operation_table[opcode as usize]

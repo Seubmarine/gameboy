@@ -1,5 +1,8 @@
 use crate::{
-    cartridge::Cartridge, mbc::mbc_trait::MemoryBankController, ppu::{self, Ppu, Tile, Tilemap}, sm83::SM83,
+    cartridge::Cartridge,
+    mbc::mbc_trait::MemoryBankController,
+    ppu::{self, Ppu, Tile, Tilemap},
+    sm83::SM83,
 };
 
 pub struct Bus {
@@ -10,7 +13,8 @@ pub struct Bus {
     hardware_registers: HardwareRegisters,
     hram: [u8; 127],
     ppu: Ppu,
-    interupt_enable: u8,
+    pub interrupt_enable: u8,
+    pub interrupt_flag: u8,
 }
 
 impl Bus {
@@ -23,8 +27,22 @@ impl Bus {
             hardware_registers: Default::default(),
             hram: [0; 127],
             ppu: Ppu::new(),
-            interupt_enable: 0,
+            interrupt_enable: 0,
+            interrupt_flag: 0,
         }
+    }
+
+    pub fn set_interrupt(&mut self, interrupt: Interrupt) {
+        self.interrupt_flag |= interrupt.flag();
+    }
+
+    pub fn clear_interrupt(&mut self, interrupt: Interrupt) {
+        self.interrupt_flag &= !interrupt.flag();
+    }
+
+    pub fn interrupt_pending(&self) -> u8 {
+        const INTERRUPT_MASK: u8 = 0b11111;
+        self.interrupt_enable & self.interrupt_enable & INTERRUPT_MASK
     }
 
     pub fn dma_cycle_m(&mut self) {
@@ -50,11 +68,12 @@ impl Bus {
             0xE000..=0xFDFF => self.peek(addr - 0x2000), //todo!("echo ram (mirror 0xC000-0xDDFF)"),
             0xFE00..=0xFE9F => todo!("object attribute memory (oam)"),
             0xFEA0..=0xFEFF => todo!("not usable (prohibited)"),
+            0xFF0F => self.interrupt_flag,
             0xFF00..=0xFF3F => self.hardware_registers.read_hardware_register(addr),
             0xFF40..=0xFF55 => self.ppu.read_reg(addr),
             0xFF56..=0xFF7F => self.hardware_registers.read_hardware_register(addr),
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
-            0xFFFF => self.interupt_enable,
+            0xFFFF => self.interrupt_enable,
         }
     }
 
@@ -71,11 +90,12 @@ impl Bus {
             0xE000..=0xFDFF => self.peek(addr - 0x2000), //todo!("echo ram (mirror 0xC000-0xDDFF)"),
             0xFE00..=0xFE9F => todo!("object attribute memory (oam)"),
             0xFEA0..=0xFEFF => todo!("not usable (prohibited)"),
+            0xFF0F => self.interrupt_flag,
             0xFF00..=0xFF3F => self.hardware_registers.read_hardware_register(addr),
             0xFF40..=0xFF55 => self.ppu.read_reg(addr),
             0xFF56..=0xFF7F => self.hardware_registers.read_hardware_register(addr),
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize],
-            0xFFFF => self.interupt_enable,
+            0xFFFF => self.interrupt_enable,
         }
     }
 
@@ -92,13 +112,57 @@ impl Bus {
             0xE000..=0xFDFF => self.write(addr - 0x2000, value),
             0xFE00..=0xFE9F => todo!("object attribute memory (oam)"),
             0xFEA0..=0xFEFF => todo!("not usable (prohibited)"),
+            0xFF0F => self.interrupt_flag = value,
             0xFF00..=0xFF3F => self.hardware_registers.write_hardware_register(addr, value),
             0xFF40..=0xFF55 => self.ppu.write_reg(addr, value),
             0xFF56..=0xFF7F => self.hardware_registers.write_hardware_register(addr, value),
             0xFF80..=0xFFFE => self.hram[(addr - 0xFF80) as usize] = value,
-            0xFFFF => self.interupt_enable = value,
+            0xFFFF => self.interrupt_enable = value,
             _ => (),
         };
+    }
+}
+
+pub enum Interrupt {
+    Vblank,
+    Stat,
+    Timer,
+    Serial,
+    Joypad,
+}
+impl Interrupt {
+    pub fn flag(&self) -> u8 {
+        match self {
+            Interrupt::Vblank => 1 << 0,
+            Interrupt::Stat => 1 << 1,
+            Interrupt::Timer => 1 << 2,
+            Interrupt::Serial => 1 << 3,
+            Interrupt::Joypad => 1 << 4,
+        }
+    }
+    pub fn handler_address(&self) -> u16 {
+        match self {
+            Interrupt::Vblank => 0x40,
+            Interrupt::Stat => 0x48,
+            Interrupt::Timer => 0x50,
+            Interrupt::Serial => 0x58,
+            Interrupt::Joypad => 0x60,
+        }
+    }
+}
+
+impl TryFrom<u8> for Interrupt {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0b00001 => Interrupt::Vblank,
+            0b00010 => Interrupt::Stat,
+            0b00100 => Interrupt::Timer,
+            0b01000 => Interrupt::Serial,
+            0b10000 => Interrupt::Joypad,
+            _ => return Err(()),
+        })
     }
 }
 
@@ -138,6 +202,8 @@ impl GameBoy {
     }
 
     pub fn step(&mut self) {
+        let interrupt_requests = self.bus.ppu.take_interrupts();
+        self.bus.interrupt_flag |= interrupt_requests;
         self.cpu.step(&mut self.bus);
     }
 

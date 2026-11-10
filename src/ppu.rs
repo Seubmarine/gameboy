@@ -1,21 +1,33 @@
+use crate::gameboy::Interrupt;
 use std::fmt::Write;
-use crate::gameboy::Bus;
 
-
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum PpuMode {
-    OAM_SCAN = 2,
-    DRAW_PIXELS = 3,
-    HORIZONTAL_BLANK = 0,
-    VERTICAL_BLANK = 1,
+    OamScan = 2,
+    DrawPixels = 3,
+    HorizontalBlank = 0,
+    VerticalBlank = 1,
+}
+
+impl Into<u8> for PpuMode {
+    fn into(self) -> u8 {
+        match self {
+            PpuMode::OamScan => 2,
+            PpuMode::DrawPixels => 3,
+            PpuMode::HorizontalBlank => 0,
+            PpuMode::VerticalBlank => 1,
+        }
+    }
 }
 
 pub struct Ppu {
-    lx: u8,   //line x
+    lx: u16,  //line x
     ly: u8,   //line y
     lyc: u8,  //line y compare
     scx: u8,  //Background viewport x (scrolling)
     scy: u8,  //Background viewport y (scrolling)
     lcdc: u8, //LCD Control
+    stat: u8, //Status
     //GameBoy (non-color) palette
     bgp: u8,  //backgroud palette
     obp0: u8, //object palette 0
@@ -30,10 +42,12 @@ pub struct Ppu {
     wx: u8, //window x
 
     //ppu internal
+    stat_line: bool, //used for interrupt trigger, act like the stat of the previous cycle, (it's high if any stat is true, and becomes low when all stat are false)
+    interrupts: u8,
     mode: PpuMode,
     frame: Frame,
     pub oam: [u8; Ppu::OAM_SIZE],
-    pub dma : Dma,
+    pub dma: Dma,
 }
 
 impl Ppu {
@@ -46,6 +60,7 @@ impl Ppu {
             scx: 0,  //Background viewport x (scrolling)
             scy: 0,  //Background viewport y (scrolling)
             lcdc: 0, //LCD Control
+            stat: 0, //Status
             //GameBoy (non-color) palette
             bgp: 0,  //backgroud palette
             obp0: 0, //object palette 0
@@ -58,7 +73,10 @@ impl Ppu {
             //Window
             wy: 0, //window y
             wx: 0, //window x
-            mode: PpuMode::OAM_SCAN,
+            //Internal
+            stat_line: false,
+            interrupts: 0,
+            mode: PpuMode::OamScan,
             frame: Frame::new(),
             oam: [0; Ppu::OAM_SIZE],
             dma: Dma::new(),
@@ -69,7 +87,7 @@ impl Ppu {
         0x9F;
         match addr {
             0xFF40 => self.lcdc,
-            0xFF41 => todo!("stat read"),
+            0xFF41 => self.stat_read(),
             0xFF42 => self.scy,
             0xFF43 => self.scx,
             0xFF44 => self.ly,
@@ -89,11 +107,11 @@ impl Ppu {
     pub fn write_reg(&mut self, addr: u16, v: u8) {
         match addr {
             0xFF40 => self.lcdc = v,
-            0xFF41 => todo!("stat read"),
+            0xFF41 => self.stat_write(v),
             0xFF42 => self.scy = v,
             0xFF43 => self.scx = v,
             0xFF44 => {}
-            0xFF45 => self.lyc = v,
+            0xFF45 => self.set_lyc(v),
             0xFF46 => self.dma.start_dma(v),
             0xFF47 => self.bgp = v,
             0xFF48 => self.obp0 = v,
@@ -106,7 +124,53 @@ impl Ppu {
         }
     }
 
-    const SCAN_LINE_H: u8 = 154;
+    fn set_lyc(&mut self, value: u8) {
+        self.lyc = value;
+        self.update_stat();
+    }
+
+    fn set_ly(&mut self, value: u8) {
+        self.ly = value;
+        self.update_stat();
+    }
+
+    //All interrupt selector flags
+    const STAT_FLAG_LYC: u8 = 1 << 6; //activate check if lyc == ly in interrupt
+    const STAT_FLAG_MODE_2: u8 = 1 << 5; //activate check if mode 2
+    const STAT_FLAG_MODE_1: u8 = 1 << 4; //activate check if mode 1
+    const STAT_FLAG_MODE_0: u8 = 1 << 3; //activate check if mode 0
+    //mask of all interrupt selector
+    const STAT_FLAG_MASK: u8 =
+        Ppu::STAT_FLAG_MODE_2 | Ppu::STAT_FLAG_MODE_1 | Ppu::STAT_FLAG_MODE_0 | Ppu::STAT_FLAG_LYC;
+    //status is edge triggered, so we only fire stat interrupt if the value actually update
+    fn update_stat(&mut self) {
+        let mode: u8 = self.mode as u8;
+        let line = (self.stat & Ppu::STAT_FLAG_LYC != 0 && self.ly == self.lyc)
+            || (self.stat & Ppu::STAT_FLAG_MODE_2 != 0 && mode == 2)
+            || (self.stat & Ppu::STAT_FLAG_MODE_1 != 0 && mode == 1)
+            || (self.stat & Ppu::STAT_FLAG_MODE_0 != 0 && mode == 0);
+
+        //Only trigger an interrupt if the previous stat line was false (all condition need to be false once)
+        //stat_line is the previous status, it only trigger when going from low to high
+        //high to high will no trigger anything, if we check lyc == ly, and the condition is true, it will trigger an interrupt once
+        //This is the correct implementation of STAT blocking
+        if line && !self.stat_line {
+            self.interrupts |= Interrupt::Stat.flag();
+        }
+        self.stat_line = line;
+    }
+
+    fn stat_read(&self) -> u8 {
+        let lyc_match = if self.lyc == self.ly { 0b100 } else { 0 };
+        let mode: u8 = self.mode.into();
+        0b10000000 | (self.stat & Ppu::STAT_FLAG_MASK) | lyc_match | mode
+    }
+
+    fn stat_write(&mut self, value: u8) {
+        self.stat = value & Ppu::STAT_FLAG_MASK;
+    }
+
+    const SCAN_LINE_H: u16 = 456;
     const SCAN_LINE_V: u8 = 153;
     const VERTICAL_BLANK_BEGIN: u8 = 144;
 
@@ -117,31 +181,49 @@ impl Ppu {
         self.cycle_t();
     }
 
+    fn set_mode(&mut self, mode: PpuMode) {
+        self.mode = mode;
+        self.update_stat();
+    }
+
     pub fn cycle_t(&mut self) {
-        const OAM_SCAN_DURATION: u8 = 80;
-        if self.lx < OAM_SCAN_DURATION {
-        } else {
-            //either mode 3(draw) or 0(h blank)
+        if self.ly == Ppu::VERTICAL_BLANK_BEGIN && self.lx == 0 {
+            self.interrupts |= Interrupt::Vblank.flag();
         }
-        // let mode = if self.y_position >= Ppu::VERTICAL_BLANK_BEGIN {
-        //     PpuMode::VERTICAL_BLANK
-        // } else {
-        //     match self.x_position {
-        //         0..80 => PpuMode::OAM_SCAN,
-        //         172..289 => PpuMode::DRAW_PIXELS,
-        //         0..80 => PpuMode::,
-        //     };
-        // }
-        self.lx += 1;
 
-        if self.lx >= Ppu::SCAN_LINE_H {
-            self.lx = 0;
-            self.ly += 1;
-
-            if self.ly >= Ppu::SCAN_LINE_V {
-                self.ly = 0;
+        if self.ly < Ppu::VERTICAL_BLANK_BEGIN {
+            const OAM_SCAN_DURATION: u16 = 80;
+            if self.lx < OAM_SCAN_DURATION {
+                self.set_mode(PpuMode::OamScan);
+            } else if self.lx < 172 {
+                self.set_mode(PpuMode::DrawPixels);
+            } else {
+                self.set_mode(PpuMode::HorizontalBlank);
             }
+        } else {
+            self.set_mode(PpuMode::VerticalBlank);
         }
+
+        let mut new_ly = self.ly;
+        if self.lx < Ppu::SCAN_LINE_H {
+            self.lx += 1;
+        } else {
+            self.lx = 0;
+        }
+
+        if self.lx == 0 {
+            self.set_ly(self.ly + 1);
+        }
+
+        if self.ly == 153 && self.lx == 4 {
+            //line 153 is only read for 4 dot, and is then set to 0
+            //self.lx == 4 is a delay of 4 dot
+            self.set_ly(0);
+        }
+    }
+
+    pub fn take_interrupts(&mut self) -> u8 {
+        std::mem::take(&mut self.interrupts)
     }
 
     pub fn get_tile(vram: &[u8], index: usize) -> Tile {
@@ -160,8 +242,6 @@ impl Ppu {
     const TILEMAP2_RANGE: std::ops::RangeInclusive<usize> =
         (0x9C00 - Ppu::VRAM_INDEX)..=(0x9FFF - Ppu::VRAM_INDEX);
 
-    // const TILEMAP1_INDEX : usize = 0x9800 - Ppu::VRAM_INDEX;
-    // const TILEMAP2_INDEX : usize = 0x9C00 - Ppu::VRAM_INDEX;
     pub fn get_tilemaps(vram: &[u8]) -> (Tilemap, Tilemap) {
         let t1_data = &vram[Ppu::TILEMAP1_RANGE];
         let t1_slice = t1_data.try_into().unwrap();
@@ -177,14 +257,13 @@ impl Ppu {
         assert!(index < 40, "Only 40 object in the Object Attribute Memory");
         let index = index * 4; //an Object is 4 bytes
         Object {
-            y_position : self.oam[index],
-            x_position : self.oam[index + 1],
-            tile_index : self.oam[index + 2],
-            attributes : self.oam[index + 3],
+            y_position: self.oam[index],
+            x_position: self.oam[index + 1],
+            tile_index: self.oam[index + 2],
+            attributes: self.oam[index + 3],
         }
     }
 }
-
 
 pub struct Dma {
     start_delay: bool,
@@ -207,17 +286,17 @@ impl Dma {
 
     //If the dma is currently in work, this return Some(address to copy, oam index)
     //if it's not in work it returns None
-    //a complete dma copy should take 160 m_cycles for the 160 bytes in OAM 
+    //a complete dma copy should take 160 m_cycles for the 160 bytes in OAM
     pub fn cycle_m(&mut self) -> Option<(u16, usize)> {
         //copy bytes each cycle
         if self.is_working {
             if (self.index as usize) < Ppu::OAM_SIZE {
-                let info =  Some((self.start_address + self.index as u16, self.index as usize));
+                let info = Some((self.start_address + self.index as u16, self.index as usize));
                 self.index += 1;
-                return info
+                return info;
             } else {
                 self.is_working = false;
-                return None
+                return None;
             }
         }
 
@@ -250,18 +329,18 @@ pub struct Object {
     pub x_position: u8,
     pub tile_index: u8,
     pub attributes: u8,
-} 
+}
 
 impl Object {
     //Flags
-    pub const PRIOTITY : u8 = 1 << 7;
-    pub const FLIP_Y : u8 = 1 << 6;
-    pub const FLIP_X : u8 = 1 << 5;
-    pub const DMG_PALETTE : u8 = 1 << 4;
-    pub const BANK : u8 = 1 << 3;
-    
+    pub const PRIOTITY: u8 = 1 << 7;
+    pub const FLIP_Y: u8 = 1 << 6;
+    pub const FLIP_X: u8 = 1 << 5;
+    pub const DMG_PALETTE: u8 = 1 << 4;
+    pub const BANK: u8 = 1 << 3;
+
     pub fn get_cgb_pallette(&self) -> u8 {
-        const CGB_PALETTE_MASK : u8 = 0b111;
+        const CGB_PALETTE_MASK: u8 = 0b111;
         self.attributes & CGB_PALETTE_MASK
     }
 }
@@ -345,10 +424,11 @@ impl std::fmt::Display for Tile {
                 match b & 0b11 {
                     0 => f.write_char(' ')?,
                     1 => f.write_char('.')?,
-                    2 => f.write_char('=')?,
-                    3 => f.write_char('#')?,
+                    2 => f.write_char('*')?,
+                    3 => f.write_char('@')?,
                     _ => unreachable!(),
                 };
+                f.write_char(' ')?;
             }
             f.write_char('\n')?;
         }
