@@ -1404,8 +1404,13 @@ impl SM83 {
     }
 
     fn debug_op(&mut self, bus: &mut Bus, opcode: u8, ins: &Instruction) {
-        let pc = self.pc.wrapping_sub(1);
+        let mut opcode = opcode;
+        let mut pc = self.pc.wrapping_sub(1);
         let name = ins.name;
+        if opcode == SM83::PREFIX_OPERATION {
+            pc = pc.wrapping_sub(1);
+            opcode = bus.peek(pc);
+        }
         match (ins.arg1, ins.arg2) {
             (Arg::Nothing, Arg::Nothing) => {
                 println!("{pc:#06X}[{opcode:#04X}]: {name}")
@@ -1439,6 +1444,7 @@ impl SM83 {
         false
     }
 
+    const PREFIX_OPERATION: u8 = 0xCB;
     pub fn step(&mut self, bus: &mut Bus) {
         if self.is_halted {
             bus.cycle_m();
@@ -1456,7 +1462,7 @@ impl SM83 {
         }
 
         let opcode = self.fetch(bus);
-        let op = if opcode != 0xCB {
+        let op = if opcode != SM83::PREFIX_OPERATION {
             self.operation_table[opcode as usize]
         } else {
             let opcode = self.fetch(bus);
