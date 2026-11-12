@@ -945,8 +945,15 @@ impl SM83 {
         }
     }
 
-    fn rr(&mut self, _bus: &mut Bus, _register: Arg, _1: Arg) {
-        todo!()
+    fn rr(&mut self, bus: &mut Bus, register: Arg, _1: Arg) {
+        match register {
+            Arg::R8(r8) => {
+                let value = self.get_r8(bus, r8);
+                let value = self.rotate(false, true, value);
+                self.set_r8(bus, r8, value);
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn sla(&mut self, bus: &mut Bus, register: Arg, _1: Arg) {
@@ -1530,11 +1537,32 @@ pub mod tests {
         let number: u8 = 0b10000000;
         cpu.set_register(RegisterName::A, number as u16);
         cpu.rl(&mut bus, R8(A), Arg::Nothing);
-        assert!(cpu.get_flag(Flag::Carry) == true);
+        assert_eq!(cpu.get_flag(Flag::Zero), true);
+        assert_eq!(cpu.get_flag(Flag::Carry), true);
         assert_eq!(get_a(&mut cpu), 0b00000000);
         cpu.rl(&mut bus, R8(A), Arg::Nothing);
-        assert!(cpu.get_flag(Flag::Carry) == false);
+        assert_eq!(cpu.get_flag(Flag::Zero), false);
+        assert_eq!(cpu.get_flag(Flag::Carry), false);
         assert_eq!(get_a(&mut cpu), 0b00000001);
+        cpu.rr(&mut bus, R8(A), Arg::Nothing);
+        assert_eq!(cpu.get_flag(Flag::Zero), true);
+        assert_eq!(cpu.get_flag(Flag::Carry), true);
+        assert_eq!(get_a(&mut cpu), 0b00000000);
+        cpu.rr(&mut bus, R8(A), Arg::Nothing);
+        assert_eq!(cpu.get_flag(Flag::Zero), false);
+        assert_eq!(cpu.get_flag(Flag::Carry), false);
+        assert_eq!(get_a(&mut cpu), 0b10000000);
+
+        cpu.set_flags(false, false, false, false);
+        cpu.set_register(RegisterName::A, 0b10000000);
+        cpu.rla(&mut bus, Arg::Nothing, Arg::Nothing);
+        assert_eq!(cpu.get_flag(Flag::Zero), false);
+        assert_eq!(cpu.get_flag(Flag::Carry), true);
+        assert_eq!(get_a(&mut cpu), 0b00000000);
+        cpu.rra(&mut bus, Arg::Nothing, Arg::Nothing);
+        assert_eq!(cpu.get_flag(Flag::Zero), false);
+        assert_eq!(cpu.get_flag(Flag::Carry), false);
+        assert_eq!(get_a(&mut cpu), 0b10000000);
     }
 
     #[test]
