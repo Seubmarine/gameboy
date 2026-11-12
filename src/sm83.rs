@@ -759,7 +759,15 @@ impl SM83 {
                 bus.read(addr) as u16
             }
             Arg::Imm8 => self.imm8(bus) as u16,
-            Arg::Imm16 => self.imm16(bus),
+            Arg::Imm16 => {
+                if let Arg::R8(R8::A) = dst {
+                    let addr = self.imm16(bus);
+                    bus.read(addr) as u16
+                } else {
+                    self.imm16(bus)
+                }
+                
+            },
             _ => unreachable!(),
         };
 
