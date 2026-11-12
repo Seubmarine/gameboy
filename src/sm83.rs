@@ -1302,7 +1302,7 @@ impl SM83 {
             unreachable!()
         };
 
-        self.stack_push16(bus, self.pc.wrapping_add(1));
+        self.stack_push16(bus, self.pc);
         self.pc = addr as u16;
     }
 
