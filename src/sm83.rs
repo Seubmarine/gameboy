@@ -766,8 +766,7 @@ impl SM83 {
                 } else {
                     self.imm16(bus)
                 }
-                
-            },
+            }
             _ => unreachable!(),
         };
 
@@ -874,30 +873,43 @@ impl SM83 {
     }
 
     fn rlca(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
-        todo!()
+        let a = self.get_register(RegisterName::A) as u8;
+        let a = self.rotate(true, false, a);
+        self.set_register(RegisterName::A, a as u16);
+        self.set_flag(Flag::Zero, false);
     }
 
     fn rrca(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
         let a = self.get_register(RegisterName::A) as u8;
         let a = self.rotate(false, false, a);
         self.set_register(RegisterName::A, a as u16);
+        self.set_flag(Flag::Zero, false);
     }
 
+    //Rotate register A left, through the carry flag.
     fn rla(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
         let a = self.get_register(RegisterName::A) as u8;
         let a = self.rotate(true, true, a);
         self.set_register(RegisterName::A, a as u16);
+        self.set_flag(Flag::Zero, false);
     }
 
+    //Rotate register A right, through the carry flag.
     fn rra(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
-        todo!()
+        let a = self.get_register(RegisterName::A) as u8;
+        let a = self.rotate(false, true, a);
+        self.set_register(RegisterName::A, a as u16);
+        self.set_flag(Flag::Zero, false);
     }
 
     fn daa(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
         todo!()
     }
     fn cpl(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
-        todo!()
+        let a = self.get_register(RegisterName::A) as u8;
+        self.set_register(RegisterName::A, !a as u16);
+        self.set_flag(Flag::Substraction, true);
+        self.set_flag(Flag::HalfCarry, true);
     }
     fn scf(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
         self.set_flag(Flag::Zero, false);
@@ -926,7 +938,7 @@ impl SM83 {
         match register {
             Arg::R8(r8) => {
                 let value = self.get_r8(bus, r8);
-                self.rotate(true, true, value);
+                let value = self.rotate(true, true, value);
                 self.set_r8(bus, r8, value);
             }
             _ => unreachable!(),
@@ -970,8 +982,14 @@ impl SM83 {
         }
     }
 
-    fn srl(&mut self, _bus: &mut Bus, _register: Arg, _1: Arg) {
-        todo!()
+    fn srl(&mut self, bus: &mut Bus, register: Arg, _1: Arg) {
+        let r8 = match register {
+            Arg::R8(r8) => r8,
+            _ => unreachable!(),
+        };
+        let byte = self.get_r8(bus, r8);
+        let byte = self.shift(false, false, byte);
+        self.set_r8(bus, r8, byte);
     }
 
     fn bit(&mut self, bus: &mut Bus, bits: Arg, register: Arg) {
@@ -1476,8 +1494,48 @@ impl SM83 {
 #[cfg(test)]
 pub mod tests {
 
+    use std::iter;
+
+    use crate::{gameboy::GameBoy, mbc::mbc1::MBC1, sm83::Arg::R8};
+
     // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
+
+    fn cpu() -> (SM83, Bus) {
+        let mut cpu = SM83::new();
+        let zeroes = iter::repeat_n(0, 1 << 16);
+        let rom = Vec::from_iter(zeroes);
+        let len = rom.len();
+        let mbc = MBC1::new(rom, len, 0);
+        let bus = Bus::new(Box::new(mbc));
+        cpu.af = 0;
+        cpu.bc = 0;
+        cpu.de = 0;
+        cpu.hl = 0;
+        cpu.pc = 0;
+        cpu.sp = 0;
+        (cpu, bus)
+    }
+
+    fn get_a(cpu: &mut SM83) -> u8 {
+        cpu.get_register(RegisterName::A) as u8
+    }
+
+    #[test]
+    fn opcode_rotate() {
+        let (mut cpu, mut bus) = cpu();
+
+        use super::R8::A;
+        use Arg::R8;
+        let number: u8 = 0b10000000;
+        cpu.set_register(RegisterName::A, number as u16);
+        cpu.rl(&mut bus, R8(A), Arg::Nothing);
+        assert!(cpu.get_flag(Flag::Carry) == true);
+        assert_eq!(get_a(&mut cpu), 0b00000000);
+        cpu.rl(&mut bus, R8(A), Arg::Nothing);
+        assert!(cpu.get_flag(Flag::Carry) == false);
+        assert_eq!(get_a(&mut cpu), 0b00000001);
+    }
 
     #[test]
     fn test_flag() {
