@@ -564,8 +564,8 @@ impl SM83 {
                         match bit_3210 {
                             0b0001 => return op!(pop, R16Stk(bit_54.into())),
                             0b0101 => return op!(push, R16Stk(bit_54.into())),
-                            _ => return op_todo!("illegal"),
-                        };
+                            _ => op!(illegal),
+                        }
                     }
                     _ => op_todo!("illegal"),
                 }
