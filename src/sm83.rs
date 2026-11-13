@@ -821,87 +821,6 @@ impl SM83 {
         }
     }
 
-    //shift
-
-    fn rotate(&mut self, left: bool, use_carry: bool, value: u8) -> u8 {
-        let leftmost = value & 0b10000000;
-        let rightmost = value & 0b1;
-
-        let moving_bit = if use_carry {
-            self.get_flag(Flag::Carry) as u8
-        } else {
-            if left { leftmost } else { rightmost }
-        };
-
-        let output = if left {
-            self.set_flag(Flag::Carry, leftmost != 0);
-            (value << 1) | (moving_bit)
-        } else {
-            self.set_flag(Flag::Carry, rightmost != 0);
-            (value >> 1) | (moving_bit << 7)
-        };
-
-        self.set_flag(Flag::Zero, output == 0);
-        self.set_flag(Flag::Substraction, false);
-        self.set_flag(Flag::HalfCarry, false);
-
-        //println!("rotate {left:?} {use_carry:?} value: {value:#b} output: {output:#b}");
-        output
-    }
-
-    fn shift(&mut self, left: bool, arithmetic: bool, mut value: u8) -> u8 {
-        let rightmost = value & 0b1;
-        let leftmost = value & 0b10000000;
-
-        if left {
-            value = value << 1;
-            if !arithmetic {
-                value = value | rightmost
-            }
-            self.set_flag(Flag::Carry, rightmost != 0);
-        } else {
-            value = value >> 1;
-            if !arithmetic {
-                value = value | leftmost
-            }
-            self.set_flag(Flag::Carry, leftmost != 0);
-        }
-        self.set_flag(Flag::Zero, value == 0);
-        self.set_flag(Flag::Substraction, false);
-        self.set_flag(Flag::HalfCarry, false);
-        value
-    }
-
-    fn rlca(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
-        let a = self.get_register(RegisterName::A) as u8;
-        let a = self.rotate(true, false, a);
-        self.set_register(RegisterName::A, a as u16);
-        self.set_flag(Flag::Zero, false);
-    }
-
-    fn rrca(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
-        let a = self.get_register(RegisterName::A) as u8;
-        let a = self.rotate(false, false, a);
-        self.set_register(RegisterName::A, a as u16);
-        self.set_flag(Flag::Zero, false);
-    }
-
-    //Rotate register A left, through the carry flag.
-    fn rla(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
-        let a = self.get_register(RegisterName::A) as u8;
-        let a = self.rotate(true, true, a);
-        self.set_register(RegisterName::A, a as u16);
-        self.set_flag(Flag::Zero, false);
-    }
-
-    //Rotate register A right, through the carry flag.
-    fn rra(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
-        let a = self.get_register(RegisterName::A) as u8;
-        let a = self.rotate(false, true, a);
-        self.set_register(RegisterName::A, a as u16);
-        self.set_flag(Flag::Zero, false);
-    }
-
     fn daa(&mut self, _bus: &mut Bus, _0: Arg, _1: Arg) {
         todo!()
     }
@@ -926,77 +845,110 @@ impl SM83 {
 
     /*Prefix Instruction */
 
-    fn rlc(&mut self, _bus: &mut Bus, _register: Arg, _1: Arg) {
-        todo!()
+    //Helper method to implement all rotate and shift prefix opcode
+    //register must be an R8
+    //take a Fn or closure with parameter (current_value: u8, current_carry: u8, bit7: u8, bit0: u8) -> (output_value: u8, output_carry: u8)
+    //bit7 is current_value & 0b10000000
+    //bit0 is current_value & 0b00000001
+    //output_value set the new value in the given register
+    //output_carry set the carry to true if non zero, or unset it if it's zero
+    //RLCA, RRCA, RLA, RRA need to set the carry flag to 0 after calling this function
+    fn rotate_helper(
+        &mut self,
+        bus: &mut Bus,
+        register: Arg,
+        fn_set_value_and_carry: impl Fn(u8, u8, u8, u8) -> (u8, u8),
+    ) {
+        let r8 = if let Arg::R8(r8) = register {
+            r8
+        } else {
+            unreachable!("register can only be of type R8");
+        };
+        let input_value = self.get_r8(bus, r8);
+        let input_carry = self.get_flag(Flag::Carry) as u8;
+        let bit7 = input_value & 0b10000000;
+        let bit0 = input_value & 0b00000001;
+        let (output_value, output_carry) =
+            fn_set_value_and_carry(input_value, input_carry, bit7, bit0);
+        self.set_r8(bus, r8, output_value);
+        self.set_flag(Flag::Carry, output_carry != 0);
+        self.set_flag(Flag::Zero, output_value == 0);
+        self.set_flag(Flag::Substraction, false);
+        self.set_flag(Flag::HalfCarry, false);
     }
 
-    fn rrc(&mut self, _bus: &mut Bus, _register: Arg, _1: Arg) {
-        todo!()
+    fn rlca(&mut self, bus: &mut Bus, _0: Arg, _1: Arg) {
+        self.rlc(bus, Arg::R8(R8::A), Arg::Nothing);
+        //Rotate with A set Zero to false
+        self.set_flag(Flag::Zero, false);
+    }
+
+    fn rrca(&mut self, bus: &mut Bus, _0: Arg, _1: Arg) {
+        self.rrc(bus, Arg::R8(R8::A), Arg::Nothing);
+        //Rotate with A set Zero to false
+        self.set_flag(Flag::Zero, false);
+    }
+
+    //Rotate register A left, through the carry flag.
+    fn rla(&mut self, bus: &mut Bus, _0: Arg, _1: Arg) {
+        self.rl(bus, Arg::R8(R8::A), Arg::Nothing);
+        //Rotate with A set Zero to false
+        self.set_flag(Flag::Zero, false);
+    }
+
+    //Rotate register A right, through the carry flag.
+    fn rra(&mut self, bus: &mut Bus, _0: Arg, _1: Arg) {
+        self.rr(bus, Arg::R8(R8::A), Arg::Nothing);
+        //Rotate with A set Zero to false
+        self.set_flag(Flag::Zero, false);
+    }
+
+    fn rlc(&mut self, bus: &mut Bus, register: Arg, _1: Arg) {
+        self.rotate_helper(bus, register, |value, _carry, bit7, _bit0| {
+            ((value << 1) | (bit7 >> 7), bit7)
+        });
+    }
+
+    fn rrc(&mut self, bus: &mut Bus, register: Arg, _1: Arg) {
+        self.rotate_helper(bus, register, |value, _carry, _bit7, bit0| {
+            ((value >> 1) | (bit0 << 7), bit0)
+        });
     }
 
     fn rl(&mut self, bus: &mut Bus, register: Arg, _1: Arg) {
-        match register {
-            Arg::R8(r8) => {
-                let value = self.get_r8(bus, r8);
-                let value = self.rotate(true, true, value);
-                self.set_r8(bus, r8, value);
-            }
-            _ => unreachable!(),
-        }
+        self.rotate_helper(bus, register, |value, carry, bit7, _bit0| {
+            ((value << 1) | (carry), bit7)
+        });
     }
 
     fn rr(&mut self, bus: &mut Bus, register: Arg, _1: Arg) {
-        match register {
-            Arg::R8(r8) => {
-                let value = self.get_r8(bus, r8);
-                let value = self.rotate(false, true, value);
-                self.set_r8(bus, r8, value);
-            }
-            _ => unreachable!(),
-        }
+        self.rotate_helper(bus, register, |value, carry, _bit7, bit0| {
+            ((value >> 1) | (carry << 7), bit0)
+        });
     }
 
     fn sla(&mut self, bus: &mut Bus, register: Arg, _1: Arg) {
-        match register {
-            Arg::R8(r8) => {
-                let value = self.get_r8(bus, r8);
-                let value = self.shift(true, true, value);
-                self.set_r8(bus, r8, value);
-            }
-            _ => unreachable!(),
-        }
+        self.rotate_helper(bus, register, |value, _carry, bit7, _bit0| {
+            ((value << 1), bit7)
+        });
     }
 
     fn sra(&mut self, bus: &mut Bus, register: Arg, _1: Arg) {
-        match register {
-            Arg::R8(r8) => {
-                let value = self.get_r8(bus, r8);
-                let value = self.shift(false, true, value);
-                self.set_r8(bus, r8, value);
-            }
-            _ => unreachable!(),
-        }
+        self.rotate_helper(bus, register, |value, _carry, bit7, bit0| {
+            (bit7 | (value >> 1), bit0)
+        });
     }
 
     fn swap(&mut self, bus: &mut Bus, register: Arg, _1: Arg) {
-        match register {
-            Arg::R8(r8) => {
-                let value = self.get_r8(bus, r8);
-                let value = value >> 4 | value << 4;
-                self.set_r8(bus, r8, value);
-            }
-            _ => unreachable!(),
-        }
+        self.rotate_helper(bus, register, |value, _carry, _bit7, _bit0| {
+            ((value << 4) | (value >> 4), 0)
+        });
     }
 
     fn srl(&mut self, bus: &mut Bus, register: Arg, _1: Arg) {
-        let r8 = match register {
-            Arg::R8(r8) => r8,
-            _ => unreachable!(),
-        };
-        let byte = self.get_r8(bus, r8);
-        let byte = self.shift(false, false, byte);
-        self.set_r8(bus, r8, byte);
+        self.rotate_helper(bus, register, |value, _carry, _bit7, bit0| {
+            ((value >> 1), bit0)
+        });
     }
 
     fn bit(&mut self, bus: &mut Bus, bits: Arg, register: Arg) {
@@ -1493,7 +1445,7 @@ impl SM83 {
             let opcode = self.fetch(bus);
             self.operation_prefix_table[opcode as usize]
         };
-        self.debug_op(bus, opcode, &op);
+        // self.debug_op(bus, opcode, &op);
         (op.operation)(self, bus, op.arg1, op.arg2);
     }
 }
@@ -1503,8 +1455,7 @@ pub mod tests {
 
     use std::iter;
 
-    use crate::{gameboy::GameBoy, mbc::mbc1::MBC1, sm83::Arg::R8};
-
+    use crate::{mbc::mbc1::MBC1, sm83::Arg::Nothing};
     // Note this useful idiom: importing names from outer (for mod tests) scope.
     use super::*;
 
@@ -1534,8 +1485,8 @@ pub mod tests {
 
         use super::R8::A;
         use Arg::R8;
-        let number: u8 = 0b10000000;
-        cpu.set_register(RegisterName::A, number as u16);
+        let value: u8 = 0b10000000;
+        cpu.set_register(RegisterName::A, value as u16);
         cpu.rl(&mut bus, R8(A), Arg::Nothing);
         assert_eq!(cpu.get_flag(Flag::Zero), true);
         assert_eq!(cpu.get_flag(Flag::Carry), true);
@@ -1563,6 +1514,42 @@ pub mod tests {
         assert_eq!(cpu.get_flag(Flag::Zero), false);
         assert_eq!(cpu.get_flag(Flag::Carry), false);
         assert_eq!(get_a(&mut cpu), 0b10000000);
+
+        cpu.set_flags(false, false, false, false);
+        let value = 0b10000001;
+        cpu.set_register(RegisterName::A, value);
+        cpu.rlc(&mut bus, R8(A), Nothing);
+        assert_eq!(get_a(&mut cpu), 0b00000011);
+        assert_eq!(cpu.get_flag(Flag::Carry), true);
+    }
+
+    #[test]
+    fn opcode_shift() {
+        use super::R8::A;
+        use Arg::Nothing;
+        use Arg::R8;
+        let (mut cpu, mut bus) = cpu();
+        let mut value: u8 = 0b01000000;
+        cpu.set_register(RegisterName::A, value as u16);
+        cpu.sla(&mut bus, R8(A), Nothing);
+        value = value << 1;
+        assert_eq!(get_a(&mut cpu), value);
+        assert_eq!(cpu.get_flag(Flag::Carry), false);
+        cpu.set_register(RegisterName::A, value as u16);
+        cpu.sla(&mut bus, R8(A), Nothing);
+        value = value << 1;
+        assert_eq!(get_a(&mut cpu), value);
+        assert_eq!(cpu.get_flag(Flag::Carry), true);
+        cpu.set_register(RegisterName::A, value as u16);
+        cpu.sla(&mut bus, R8(A), Nothing);
+        value = value << 1;
+        assert_eq!(get_a(&mut cpu), value);
+
+        let value: u8 = 0b10000000;
+        cpu.set_register(RegisterName::A, value as u16);
+        cpu.sra(&mut bus, R8(A), Nothing);
+        assert_eq!(get_a(&mut cpu), 0b11000000);
+        assert_eq!(cpu.get_flag(Flag::Carry), false);
     }
 
     #[test]
