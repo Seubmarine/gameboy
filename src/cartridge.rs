@@ -111,8 +111,8 @@ pub struct CartridgeErrors {
 }
 
 impl<'rom> Cartridge<'rom> {
-    const ROM_BANK_SIZE: usize = 0x4000;
-    const RAM_BANK_SIZE: usize = 0x2000;
+    pub const ROM_BANK_SIZE: usize = 0x4000;
+    pub const RAM_BANK_SIZE: usize = 0x2000;
 
     pub fn load(rom: &'rom [u8]) -> Result<Self, CartridgeErrors> {
         let mut errors: Vec<CartridgeError> = Vec::new();
