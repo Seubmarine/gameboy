@@ -204,7 +204,6 @@ impl Ppu {
             self.set_mode(PpuMode::VerticalBlank);
         }
 
-        let mut new_ly = self.ly;
         if self.lx < Ppu::SCAN_LINE_H {
             self.lx += 1;
         } else {
@@ -226,8 +225,22 @@ impl Ppu {
         std::mem::take(&mut self.interrupts)
     }
 
+    //Convert a tile index into the location in ram, with the mode applied
+    //The “$8000 method” uses $8000 as its base pointer and uses an unsigned addressing, meaning that tiles 0-127 are in block 0, and tiles 128-255 are in block 1.
+    fn index_mode_8000(index: usize) -> usize {
+        index
+    }
+
+    //The “$8800 method” uses $9000 as its base pointer and uses a signed addressing, meaning that tiles 0-127 are in block 2, and tiles -128 to -1 are in block 1;
+    //or, to put it differently, “$8800 addressing” takes tiles 0-127 from block 2 and tiles 128-255 from block 1.
+    fn index_mode_8800(index: usize) -> usize {
+        let index = index as u8 as isize;
+        const OFFSET: isize = 0x1000 / Tile::BYTE_SIZE as isize;
+        (OFFSET + index) as usize
+    }
+
     pub fn get_tile(vram: &[u8], index: usize) -> Tile {
-        let index = index * Tile::BYTE_SIZE;
+        let index = Ppu::index_mode_8000(index) * Tile::BYTE_SIZE;
         let data = &vram[index..index + Tile::BYTE_SIZE];
         let raw_byte = data
             .try_into()
@@ -476,5 +489,36 @@ impl std::fmt::Display for Tilemap {
         }
 
         f.write_str(&s)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_indexing_8800() {
+        for index in 0..256 {
+            let index_real = Ppu::index_mode_8800(index);
+            if index <= 127 {
+                println!("{index}");
+                assert_eq!(index_real, (0x1000 / Tile::BYTE_SIZE) + index);
+            } else {
+                assert_eq!(256, (0x800 / Tile::BYTE_SIZE) + index);
+            }
+        }
+    }
+
+    #[test]
+    fn test_stat_line() {
+        let mut ppu = Ppu::new();
+        const STAT_IS_LYC: u8 = 1 << 2;
+        ppu.stat_write(Ppu::STAT_FLAG_LYC);
+        ppu.set_lyc(2);
+        while ppu.ly != 2 {
+            assert!(ppu.stat_read() & STAT_IS_LYC == 0);
+            ppu.cycle_t();
+        }
+        assert!(ppu.stat_read() & Ppu::STAT_FLAG_LYC != 0);
     }
 }
