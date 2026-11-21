@@ -1,4 +1,4 @@
-use std::{env::args, fs, io::Read};
+use std::{env::args, fs, io::Read, panic::AssertUnwindSafe};
 
 use crate::{cartridge::Cartridge, gameboy::GameBoy};
 mod cartridge;
@@ -24,7 +24,12 @@ fn main() {
     println!("{c}");
 
     let mut gb = GameBoy::load(&c);
-    gb.run_n_cycles(2400000);
+    let r = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        gb.run_n_cycles(1000000);
+    }));
+    if let Err(e) = r {
+        eprintln!("Gameboy panicked with:\n{e:?}");
+    }
     let vram = gb.get_vram();
     println!("{vram:?}");
     for i in 0..384 {
