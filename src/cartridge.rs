@@ -119,10 +119,9 @@ impl<'rom> Cartridge<'rom> {
         let mut warnings: Vec<CartridgeWarning> = Vec::new();
 
         let cartrige_title_header = &rom[0x0134..0x0143];
-        let title = std::ffi::CStr::from_bytes_until_nul(cartrige_title_header)
+        let title = str::from_utf8(cartrige_title_header)
             .expect("rom title should be an ascii string")
-            .to_str()
-            .unwrap();
+            .trim_end_matches('\0');
 
         let destination: Destination = rom[0x014A].into();
 
