@@ -89,7 +89,7 @@ impl Bus {
             0xD000..=0xDFFF => self.wram[self.wram_bank_current][(addr - 0xD000) as usize], //todo!("cgb: WRAM bank 1-7 (switchable)"),
             0xE000..=0xFDFF => self.peek(addr - 0x2000), //todo!("echo ram (mirror 0xC000-0xDDFF)"),
             0xFE00..=0xFE9F => self.ppu.oam[(addr - 0xFE00) as usize],
-            0xFEA0..=0xFEFF => todo!("not usable (prohibited)"),
+            0xFEA0..=0xFEFF => 0xFF,
             0xFF0F => self.interrupt_flag,
             0xFF00..=0xFF3F => self.hardware_registers.read_hardware_register(addr),
             0xFF40..=0xFF55 => self.ppu.read_reg(addr),
@@ -111,7 +111,7 @@ impl Bus {
             0xD000..=0xDFFF => self.wram[self.wram_bank_current][(addr - 0xD000) as usize] = value, //todo!("cgb: WRAM bank 1-7 (switchable)")
             0xE000..=0xFDFF => self.write(addr - 0x2000, value),
             0xFE00..=0xFE9F => self.ppu.oam[(addr - 0xFE00) as usize] = value,
-            0xFEA0..=0xFEFF => todo!("not usable (prohibited)"),
+            0xFEA0..=0xFEFF => (),
             0xFF0F => self.interrupt_flag = value,
             0xFF00..=0xFF3F => self.hardware_registers.write_hardware_register(addr, value),
             0xFF40..=0xFF55 => self.ppu.write_reg(addr, value),
