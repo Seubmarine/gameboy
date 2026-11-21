@@ -7,17 +7,19 @@ pub struct RomOnly {
 
 impl RomOnly {
     pub fn new(rom: Vec<u8>) -> Self {
-        Self { rom, ram: vec![0; crate::Cartridge::RAM_BANK_SIZE] }
+        Self {
+            rom,
+            ram: vec![0; crate::Cartridge::RAM_BANK_SIZE],
+        }
     }
 }
 
 impl MemoryBankController for RomOnly {
-
     fn read(&self, addr: u16) -> u8 {
         match addr {
             0x0000..=0x7FFF => self.rom[addr as usize],
             0xA000..=0xBFFF => self.ram[addr as usize - 0xA000],
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 
@@ -25,7 +27,7 @@ impl MemoryBankController for RomOnly {
         match addr {
             0x0000..=0x7FFF => (),
             0xA000..=0xBFFF => self.ram[addr as usize - 0xA000] = value,
-            _ => unreachable!()
+            _ => unreachable!(),
         }
     }
 }
