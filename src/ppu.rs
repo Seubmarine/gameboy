@@ -228,19 +228,19 @@ impl Ppu {
     //Convert a tile index into the location in ram, with the mode applied
     //The “$8000 method” uses $8000 as its base pointer and uses an unsigned addressing, meaning that tiles 0-127 are in block 0, and tiles 128-255 are in block 1.
     fn index_mode_8000(index: usize) -> usize {
-        index
+        0x8000 + (index * Tile::BYTE_SIZE)
     }
 
     //The “$8800 method” uses $9000 as its base pointer and uses a signed addressing, meaning that tiles 0-127 are in block 2, and tiles -128 to -1 are in block 1;
     //or, to put it differently, “$8800 addressing” takes tiles 0-127 from block 2 and tiles 128-255 from block 1.
     fn index_mode_8800(index: usize) -> usize {
-        let index = index as u8 as isize;
-        const OFFSET: isize = 0x1000 / Tile::BYTE_SIZE as isize;
-        (OFFSET + index) as usize
+        let index = index as u8 as i8 as isize;
+        const OFFSET: isize = 0x9000;
+        (OFFSET + (index * Tile::BYTE_SIZE as isize)) as usize
     }
 
     pub fn get_tile(vram: &[u8], index: usize) -> Tile {
-        let index = Ppu::index_mode_8000(index) * Tile::BYTE_SIZE;
+        let index = Ppu::index_mode_8800(index) - 0x8000;
         let data = &vram[index..index + Tile::BYTE_SIZE];
         let raw_byte = data
             .try_into()
@@ -363,9 +363,9 @@ pub struct Frame {
 }
 
 impl Frame {
-    const SIZE_X: usize = 160;
-    const SIZE_Y: usize = 144;
-    const SIZE: usize = Frame::SIZE_X * Frame::SIZE_Y;
+    pub const SIZE_X: usize = 160;
+    pub const SIZE_Y: usize = 144;
+    pub const SIZE: usize = Frame::SIZE_X * Frame::SIZE_Y;
 
     pub fn new() -> Frame {
         Frame {
@@ -375,20 +375,25 @@ impl Frame {
 
     pub fn set_pixels(&mut self, x: usize, y: usize, value: u16) {
         assert!(
-            x >= Frame::SIZE_X,
+            x < Frame::SIZE_X,
             "setting pixel with x out of bound(frame x limit: {}).",
             Frame::SIZE_X
         );
         assert!(
-            y >= Frame::SIZE_Y,
+            y < Frame::SIZE_Y,
             "setting pixel with y out of bound(frame y limit: {}).",
             Frame::SIZE_Y
         );
-        self.pixels[x * Frame::SIZE_Y + y] = value;
+        self.pixels[y * Frame::SIZE_X + x] = value;
     }
 
-    pub fn get_raw(&self) -> [u16; Frame::SIZE] {
-        self.pixels
+    pub fn get_raw(&self) -> &[u8] {
+        unsafe {
+            let (prefix, real, suffix) = self.pixels.align_to::<u8>();
+            assert!(prefix.len() == 0);
+            assert!(suffix.len() == 0);
+            real
+        }
     }
 }
 
@@ -474,10 +479,10 @@ impl std::fmt::Display for Tilemap {
                     for tile_x in 0..8 {
                         let pixel = current.pixels[tile_y * 8 + tile_x];
                         let c = match pixel & 0b11 {
-                            0 => '.',
-                            1 => '-',
-                            2 => '=',
-                            3 => '#',
+                            0 => ' ',
+                            1 => '░',
+                            2 => '▒',
+                            3 => '█',
                             _ => unreachable!(),
                         };
                         s.push(c);
@@ -493,19 +498,25 @@ impl std::fmt::Display for Tilemap {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
+
+    #[test]
+    fn test_indexing_8000() {
+        for index in 0..256 {
+            let index_real = Ppu::index_mode_8000(index);
+            assert_eq!(index_real, 0x8000 + (index * Tile::BYTE_SIZE));
+        }
+    }
 
     #[test]
     fn test_indexing_8800() {
         for index in 0..256 {
             let index_real = Ppu::index_mode_8800(index);
-            if index <= 127 {
-                println!("{index}");
-                assert_eq!(index_real, (0x1000 / Tile::BYTE_SIZE) + index);
-            } else {
-                assert_eq!(256, (0x800 / Tile::BYTE_SIZE) + index);
-            }
+            let index = index as u8 as i8;
+            let correct = (0x9000 + (index as isize * Tile::BYTE_SIZE as isize)) as usize;
+            println!("{index_real:#X}, {correct:#X}");
+            assert_eq!(index_real, correct)
         }
     }
 
@@ -520,5 +531,31 @@ mod tests {
             ppu.cycle_t();
         }
         assert!(ppu.stat_read() & Ppu::STAT_FLAG_LYC != 0);
+    }
+
+    fn rgb16(r: f32, g: f32, b: f32) -> u16 {
+        assert!(r >= 0.0 && r <= 1.0);
+        assert!(g >= 0.0 && g <= 1.0);
+        assert!(b >= 0.0 && b <= 1.0);
+        const HIGH: f32 = 0b11111 as f32;
+        let r = (HIGH * r) as u16;
+        let g = (HIGH * g) as u16;
+        let b = (HIGH * b) as u16;
+        r << 10 | g << 5 | b
+    }
+
+    pub fn frame_linear_color() -> Frame {
+        let mut frame = Frame::new();
+        for y in 0..Frame::SIZE_Y {
+            for x in 0..Frame::SIZE_X {
+                let r = x as f32 / Frame::SIZE_X as f32;
+                let g = y as f32 / Frame::SIZE_Y as f32;
+                let b = f32::sqrt(x as f32 * y as f32)
+                    / f32::sqrt(Frame::SIZE_X as f32 * Frame::SIZE_Y as f32);
+                let rgb = rgb16(r, g, b);
+                frame.set_pixels(x, y, rgb);
+            }
+        }
+        frame
     }
 }
