@@ -3,6 +3,7 @@ use std::{env::args, fs, io::Read, panic::AssertUnwindSafe};
 use crate::{cartridge::Cartridge, gameboy::GameBoy};
 mod cartridge;
 mod gameboy;
+mod joypad;
 mod mbc;
 mod ppu;
 mod sm83;

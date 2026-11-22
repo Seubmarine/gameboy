@@ -1,5 +1,6 @@
 use crate::{
     cartridge::Cartridge,
+    joypad::{Button, Joypad},
     mbc::mbc_trait::MemoryBankController,
     ppu::{self, Ppu, Tile, Tilemap},
     sm83::SM83,
@@ -13,6 +14,7 @@ pub struct Bus {
     hardware_registers: HardwareRegisters,
     hram: [u8; 127],
     ppu: Ppu,
+    joypad: Joypad,
     pub interrupt_enable: u8,
     pub interrupt_flag: u8,
 }
@@ -27,6 +29,7 @@ impl Bus {
             hardware_registers: Default::default(),
             hram: [0; 127],
             ppu: Ppu::new(),
+            joypad: Joypad::new(),
             interrupt_enable: 0,
             interrupt_flag: 0,
         }
@@ -69,6 +72,7 @@ impl Bus {
             0xFE00..=0xFE9F => self.ppu.oam[(addr - 0xFE00) as usize],
             0xFEA0..=0xFEFF => todo!("not usable (prohibited)"),
             0xFF0F => self.interrupt_flag,
+            0xFF00 => self.joypad.read_p1(),
             0xFF00..=0xFF3F => self.hardware_registers.read_hardware_register(addr),
             0xFF40..=0xFF55 => self.ppu.read_reg(addr),
             0xFF56..=0xFF7F => self.hardware_registers.read_hardware_register(addr),
@@ -91,6 +95,7 @@ impl Bus {
             0xFE00..=0xFE9F => self.ppu.oam[(addr - 0xFE00) as usize],
             0xFEA0..=0xFEFF => 0xFF,
             0xFF0F => self.interrupt_flag,
+            0xFF00 => self.joypad.read_p1(),
             0xFF00..=0xFF3F => self.hardware_registers.read_hardware_register(addr),
             0xFF40..=0xFF55 => self.ppu.read_reg(addr),
             0xFF56..=0xFF7F => self.hardware_registers.read_hardware_register(addr),
@@ -113,6 +118,7 @@ impl Bus {
             0xFE00..=0xFE9F => self.ppu.oam[(addr - 0xFE00) as usize] = value,
             0xFEA0..=0xFEFF => (),
             0xFF0F => self.interrupt_flag = value,
+            0xFF00 => self.joypad.write_p1(value),
             0xFF00..=0xFF3F => self.hardware_registers.write_hardware_register(addr, value),
             0xFF40..=0xFF55 => self.ppu.write_reg(addr, value),
             0xFF56..=0xFF7F => self.hardware_registers.write_hardware_register(addr, value),
@@ -205,6 +211,9 @@ impl GameBoy {
 
     pub fn step(&mut self) {
         let interrupt_requests = self.bus.ppu.take_interrupts();
+        if self.bus.joypad.take_interrupt() {
+            self.bus.set_interrupt(Interrupt::Joypad);
+        }
         self.bus.interrupt_flag |= interrupt_requests;
         self.cpu.step(&mut self.bus);
     }
@@ -219,6 +228,18 @@ impl GameBoy {
         for _ in 0..cycles {
             self.step();
         }
+    }
+
+    pub fn button_press(&mut self, button: Button) {
+        self.bus.joypad.press(button);
+    }
+
+    pub fn button_unpress(&mut self, button: Button) {
+        self.bus.joypad.unpress(button);
+    }
+
+    pub fn button_unpress_all(&mut self) {
+        self.bus.joypad.unpress_all();
     }
 }
 
@@ -355,7 +376,6 @@ pub struct HardwareRegisters {
 impl HardwareRegisters {
     fn get_hardware_register(&mut self, addr: u16) -> Option<&mut u8> {
         let data: &mut u8 = match addr {
-            0xFF00 => &mut self.p1,
             0xFF01 => &mut self.sb,
             0xFF02 => &mut self.sc,
             0xFF04 => &mut self.div,
